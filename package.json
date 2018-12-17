@@ -1,0 +1,16 @@
+{
+  "name": "snapmixer",
+  "version": "0.0.1",
+  "description": "Control snapcast output volumes",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Bart Nagel <bart@tremby.net>",
+  "license": "MIT",
+  "dependencies": {
+    "json-multi-parse": "^1.2.0",
+    "neo-blessed": "^0.2.0",
+    "uuid": "^3.3.2"
+  }
+}
