@@ -217,7 +217,7 @@ async function main() {
 			["{bold}h{/bold}, {bold}l{/bold}", "Adjust volume"],
 			["{bold}shift-left{/bold}, {bold}shift-right{/bold}", "Adjust volume in large increments"],
 			["{bold}H{/bold}, {bold}L{/bold}", "Adjust volume in large increments"],
-			["{bold}0{/bold}, {bold}1{/bold}, {bold}2{/bold}, ..., {bold}9{/bold}", "Set volume to 0%, 10%, 20%, ..., 90%"],
+			["{bold}1{/bold}, {bold}2{/bold}, {bold}3{/bold}, ..., {bold}0{/bold}", "Set volume to 10%, 20%, 30%, ..., 100%"],
 			["{bold}m{/bold}", "Toggle client mute"],
 			["{bold}g{/bold}", "Toggle group mute"],
 			["{bold}esc{/bold}, {bold}q{/bold}, {bold}control-c{/bold}", "Quit"],
@@ -291,7 +291,7 @@ async function main() {
 		updateDisplay();
 	});
 
-	// Snap volume to 0%, 10%, 20%, ..., 90%
+	// Snap volume to 10%, 20%, 30%, ..., 100%
 	for (let i = 0; i < 10; i++) {
 		screen.key([i.toString()], async (ch, key) => {
 			if (!helpMessage.hidden) {
@@ -301,7 +301,7 @@ async function main() {
 			if (widget.type !== 'progress-bar') {
 				return;
 			}
-			await client.setVolume(widget.clientId, i * 10);
+			await client.setVolume(widget.clientId, (i === 0 ? 10 : i) * 10);
 			updateDisplay();
 		});
 	}
