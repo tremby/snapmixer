@@ -4,9 +4,6 @@ Snapmixer
 This is a console-based volume control for
 [Snapcast](https://github.com/badaix/snapcast).
 
-This is an initial version and is not yet configurable;
-it connects to a Snapcast server on the local machine at the default port.
-
 It is not yet very efficient or fast, but it works.
 
 It is not yet packaged for release.

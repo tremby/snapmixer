@@ -1,15 +1,31 @@
 const blessed = require('neo-blessed');
 const {Console} = require('console');
+const yargs = require('yargs/yargs');
+const { hideBin } = require('yargs/helpers');
 
 const SnapcastClient = require('./snapcast-client');
 
 const logger = new Console(process.stderr, process.stderr);
 
-async function main() {
+async function main(argv) {
+	const options = yargs(hideBin(process.argv))
+		.usage('Control snapcast volumes.')
+		.option('h', {
+			alias: 'host',
+			default: 'localhost',
+			requiresArg: true,
+		})
+		.option('p', {
+			alias: 'port',
+			default: 1705,
+			number: true,
+			requiresArg: true,
+		})
+		.parse();
+
 	const client = new SnapcastClient({
-		// TODO: make this configurable
-		host: 'localhost',
-		port: 1705,
+		host: options.host,
+		port: options.port,
 	});
 	client.on('message', (message) => {
 		// TODO: handle notifications in a more sophisticated way
@@ -335,4 +351,4 @@ async function main() {
 	updateDisplay();
 }
 
-main();
+main(process.argv);
