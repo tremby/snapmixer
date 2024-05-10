@@ -1,9 +1,8 @@
 const blessed = require('neo-blessed');
-const {Console} = require('console');
+const { Console } = require('console');
+const SnapcastClient = require('snapcast-client');
 const yargs = require('yargs/yargs');
 const { hideBin } = require('yargs/helpers');
-
-const SnapcastClient = require('./snapcast-client');
 
 const logger = new Console(process.stderr, process.stderr);
 
