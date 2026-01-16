@@ -20,22 +20,6 @@ use snapcast_control::{
 use tokio;
 use futures::StreamExt;
 
-fn log_to_file(message: &str) {
-    use std::fs::OpenOptions;
-    if let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("snapmixer.log")
-    {
-        use std::io::Write;
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let _ = writeln!(file, "[{}] {}", timestamp, message);
-    }
-}
-
 #[derive(Parser)]
 #[command(name = "snapmixer")]
 #[command(about = "Control Snapcast client volumes")]
