@@ -253,15 +253,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::select! {
             Some(message) = snapcast_client.recv() => {
                 match message {
-                    Ok(_/*response*/) => {
-                        // match response {
-                        //     ValidMessage::Result { id, jsonrpc, result } => {
-                        //         println!("result id {}, jsonrpc {}, result {:?}", id, jsonrpc, result);
-                        //     },
-                        //     ValidMessage::Notification { method, jsonrpc } => {
-                        //         println!("notification method {:?}, jsonrpc {}", method, jsonrpc);
-                        //     },
-                        // }
+                    Ok(_) => {
+                        // Some update happened; probably need to redraw
                         needs_redraw = true;
                     }
                     Err(err) => {
@@ -466,6 +459,17 @@ fn get_longest_client_name_length(snapcast_state: &SnapcastState) -> usize {
         .unwrap_or(0)
 }
 
+fn get_volume_symbol(muted: bool) -> Span<'static> {
+    let symbol = {
+        if muted {
+            "🔇"
+        } else {
+            "🔊"
+        }
+    };
+    return Span::styled(symbol, Style::default().fg(if muted { Color::Red } else { Color::Green }))
+}
+
 fn draw_ui(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, app_state: &AppState, snapcast_state: &SnapcastState) {
     terminal.draw(|frame| {
         // Set up main layout and reserve space for each group
@@ -490,18 +494,10 @@ fn draw_ui(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, app_state
                 group.name.clone()
             };
 
-            // Prepare group mute icon
-            // TODO: use more symbols 🔊 🔉 🔈
-            let group_mute = if group.muted {
-                Span::styled("🔇", Style::default().fg(Color::Red))
-            } else {
-                Span::styled("🔊", Style::default().fg(Color::Green))
-            };
-
             // Put together full title
             let title_style = if app_state.focus.as_deref() == Some(&group.id) { Style::default() } else { Style::default().fg(Color::Reset) };
             let block_title = Line::from(vec![
-                group_mute.clone(),
+                get_volume_symbol(group.muted),
                 Span::raw(" "),
                 Span::styled(group_name, title_style.add_modifier(Modifier::BOLD)),
                 Span::raw(" "),
@@ -510,7 +506,7 @@ fn draw_ui(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, app_state
             // Group block
             let block = Block::default()
                 .borders(ratatui::widgets::Borders::ALL)
-                .border_style(Style::default().fg(if app_state.focus.as_deref() == Some(&group.id) { Color::Yellow } else { Color::DarkGray }))
+                .border_style(Style::default().fg(if app_state.focus.as_deref() == Some(&group.id) { Color::Yellow } else { Color::Indexed(236) }))
                 .border_type(ratatui::widgets::BorderType::Rounded)
                 .padding(Padding::new(1, 1, 0, 0))
                 .title(block_title);
@@ -538,18 +534,19 @@ fn draw_ui(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, app_state
                     Span::raw(client_name)
                 };
 
-                // Mute marker
-                let mute_marker = if client.config.volume.muted {
-                    Span::styled("🔇", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
-                } else {
-                    Span::raw("  ")
-                };
-
                 // Volume gauge
                 let gauge = Gauge::default()
                     .ratio(client.config.volume.percent as f64 / 100.0)
                     .gauge_style(
-                        Style::default().fg(if app_state.focus.as_deref() == Some(&client.id) { Color::Yellow } else { Color::Blue }),
+                        Style::default().fg(
+                            if app_state.focus.as_deref() == Some(&client.id) {
+                                Color::Yellow
+                            } else if group.muted || client.config.volume.muted {
+                                Color::Indexed(238)
+                            } else {
+                                Color::Blue
+                            }
+                        ),
                     );
 
                 // Lay out the parts
@@ -561,7 +558,7 @@ fn draw_ui(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, app_state
                     Constraint::Min(10), // gauge
                 ]).split(client_row);
                 frame.render_widget(Paragraph::new(Line::from(vec![name_span]).alignment(Alignment::Right)), parts[0]);
-                frame.render_widget(Paragraph::new(Line::from(vec![mute_marker])), parts[2]);
+                frame.render_widget(Paragraph::new(Line::from(vec![get_volume_symbol(client.config.volume.muted)])), parts[2]);
                 frame.render_widget(gauge, parts[4]);
             }
         }
