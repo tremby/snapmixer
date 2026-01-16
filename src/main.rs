@@ -19,6 +19,7 @@ use snapcast_control::{
 };
 use tokio;
 use futures::StreamExt;
+use std::collections::HashMap;
 
 #[derive(Parser)]
 #[command(name = "snapmixer")]
@@ -33,6 +34,27 @@ struct Args {
 
 struct AppState {
     focus: Option<String>,
+    fractional_volumes: HashMap<String, f64>, // client_id -> fractional volume
+}
+
+impl AppState {
+    fn new() -> Self {
+        Self {
+            focus: None,
+            fractional_volumes: HashMap::new(),
+        }
+    }
+
+    fn update_fractional_volumes(&mut self, snapcast_state: &SnapcastState) {
+        for entry in snapcast_state.clients.iter() {
+            let client_id = entry.key();
+            let current_volume = entry.value().config.volume.percent;
+            let fractional = self.fractional_volumes.get(client_id.as_str()).copied().unwrap_or(-1.0);
+            if current_volume != fractional.round() as usize {
+                self.fractional_volumes.insert(client_id.clone(), current_volume as f64);
+            }
+        }
+    }
 }
 
 fn get_all_focusable_ids(snapcast_state: &SnapcastState) -> Vec<String> {
@@ -85,6 +107,7 @@ fn move_focus(delta: i16, app_state: &AppState, snapcast_state: &SnapcastState) 
     if new_focus != app_state.focus {
         return Some(AppState {
             focus: new_focus,
+            fractional_volumes: app_state.fractional_volumes.clone(),
         });
     }
     return None;
@@ -152,13 +175,14 @@ fn move_focus_group(delta: i16, app_state: &AppState, snapcast_state: &SnapcastS
     if new_focus != app_state.focus {
         return Some(AppState {
             focus: new_focus,
+            fractional_volumes: app_state.fractional_volumes.clone(),
         });
     }
     return None;
 }
 
-async fn set_volume(volume: usize, app_state: &AppState, snapcast_state: &SnapcastState, snapcast_client: &mut SnapcastConnection) {
-    let target_volume = volume.clamp(0, 100);
+async fn set_volume(volume: f64, app_state: &mut AppState, snapcast_state: &SnapcastState, snapcast_client: &mut SnapcastConnection) {
+    let target_volume = volume.clamp(0.0, 100.0);
     let id = match app_state.focus.as_ref() {
         Some(id) => id,
         None => return,
@@ -168,54 +192,66 @@ async fn set_volume(volume: usize, app_state: &AppState, snapcast_state: &Snapca
             .filter(|entry| group.clients.contains(entry.key()))
             .map(|entry| entry.value().clone())
             .collect();
-        let loudest_client = match group_clients.iter().max_by_key(|client| client.config.volume.percent) {
-            Some(client) => client,
-            None => return,
-        };
-        let reference_volume = loudest_client.config.volume.percent;
-        if reference_volume == 0 {
+
+        // Find loudest client
+        let loudest_fractional = group_clients.iter()
+            .map(|client| app_state.fractional_volumes.get(&client.id).copied().unwrap_or(client.config.volume.percent as f64))
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap_or(0.0);
+
+        if loudest_fractional == 0.0 {
             // Avoid division by zero
             for client in group_clients.iter() {
+                app_state.fractional_volumes.insert(client.id.clone(), target_volume);
                 let _ = snapcast_client.client_set_volume(client.id.to_string(), ClientVolume {
-                    percent: target_volume,
+                    percent: target_volume.round() as usize,
                     ..client.config.volume
                 }).await;
             }
         } else {
-            // Scale proportionally
-            let factor = target_volume as f64 / reference_volume as f64;
+            // Scale proportionally using fractional volumes
+            let factor = target_volume / loudest_fractional;
             for client in group_clients.iter() {
-                let client_target = (client.config.volume.percent as f64 * factor) as usize;
+                let current_fractional = app_state.fractional_volumes.get(&client.id).copied().unwrap_or(client.config.volume.percent as f64);
+                let new_fractional = (current_fractional * factor).clamp(0.0, 100.0);
+                app_state.fractional_volumes.insert(client.id.clone(), new_fractional);
+
                 let _ = snapcast_client.client_set_volume(client.id.to_string(), ClientVolume {
-                    percent: client_target.clamp(0, 100),
+                    percent: new_fractional.round() as usize,
                     ..client.config.volume
                 }).await;
             }
         }
     } else if let Some(client) = snapcast_state.clients.get(id) {
+        app_state.fractional_volumes.insert(client.id.clone(), target_volume);
         let _ = snapcast_client.client_set_volume(client.id.to_string(), ClientVolume {
-            percent: target_volume,
+            percent: target_volume.round() as usize,
             ..client.config.volume
         }).await;
     }
 }
 
-async fn set_volume_delta(delta: i8, app_state: &AppState, snapcast_state: &SnapcastState, snapcast_client: &mut SnapcastConnection) {
+async fn set_volume_delta(delta: f64, app_state: &mut AppState, snapcast_state: &SnapcastState, snapcast_client: &mut SnapcastConnection) {
     let id = match app_state.focus.as_ref() {
         Some(id) => id,
         None => return,
     };
-    let client = if let Some(group) = snapcast_state.groups.get(id) {
+
+    let current_volume = if let Some(group) = snapcast_state.groups.get(id) {
+        // Find loudest client in group using fractional volumes
         snapcast_state.clients.iter()
             .filter(|entry| group.clients.contains(entry.key()))
-            .max_by_key(|entry| entry.value().config.volume.percent)
-            .map(|entry| entry.value().clone())
+            .map(|entry| app_state.fractional_volumes.get(entry.key()).copied().unwrap_or(entry.value().config.volume.percent as f64))
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
     } else {
-        snapcast_state.clients.get(id).map(|entry| entry.value().clone())
+        // Single client
+        snapcast_state.clients.get(id)
+            .map(|entry| app_state.fractional_volumes.get(entry.key()).copied().unwrap_or(entry.value().config.volume.percent as f64))
     };
-    if let Some(client) = client {
-        let target_volume = (client.config.volume.percent as i16 + delta as i16).clamp(0, 100) as usize;
-        return set_volume(target_volume, app_state, snapcast_state, snapcast_client).await;
+
+    if let Some(current) = current_volume {
+        let target_volume = (current + delta).clamp(0.0, 100.0);
+        set_volume(target_volume, app_state, snapcast_state, snapcast_client).await;
     }
 }
 
@@ -243,9 +279,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = EventStream::new();
 
     let snapcast_state = snapcast_client.state.clone();
-    let mut app_state = AppState {
-        focus: None,
-    };
+    let mut app_state = AppState::new();
 
     loop {
         let mut needs_redraw = false;
@@ -254,7 +288,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(message) = snapcast_client.recv() => {
                 match message {
                     Ok(_) => {
-                        // Some update happened; probably need to redraw
+                        app_state.update_fractional_volumes(&snapcast_state);
                         needs_redraw = true;
                     }
                     Err(err) => {
@@ -293,46 +327,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         },
                         Action::ReduceVolume => {
-                            let _ = set_volume_delta(-1, &app_state, &snapcast_state, &mut snapcast_client).await;
+                            let _ = set_volume_delta(-1.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
                         },
                         Action::ReduceVolumeMore => {
-                            let _ = set_volume_delta(-5, &app_state, &snapcast_state, &mut snapcast_client).await;
+                            let _ = set_volume_delta(-5.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
                         },
                         Action::RaiseVolume => {
-                            let _ = set_volume_delta(1, &app_state, &snapcast_state, &mut snapcast_client).await;
+                            let _ = set_volume_delta(1.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
                         },
                         Action::RaiseVolumeMore => {
-                            let _ = set_volume_delta(5, &app_state, &snapcast_state, &mut snapcast_client).await;
+                            let _ = set_volume_delta(5.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
                         },
                         Action::SetVolumeTo10 => {
-                            let _ = set_volume(10, &app_state, &snapcast_state, &mut snapcast_client).await;
+                            let _ = set_volume(10.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
                         },
                         Action::SetVolumeTo20 => {
-                            let _ = set_volume(20, &app_state, &snapcast_state, &mut snapcast_client).await;
+                            let _ = set_volume(20.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
                         },
                         Action::SetVolumeTo30 => {
-                            let _ = set_volume(30, &app_state, &snapcast_state, &mut snapcast_client).await;
+                            let _ = set_volume(30.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
                         },
                         Action::SetVolumeTo40 => {
-                            let _ = set_volume(40, &app_state, &snapcast_state, &mut snapcast_client).await;
+                            let _ = set_volume(40.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
                         },
                         Action::SetVolumeTo50 => {
-                            let _ = set_volume(50, &app_state, &snapcast_state, &mut snapcast_client).await;
+                            let _ = set_volume(50.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
                         },
                         Action::SetVolumeTo60 => {
-                            let _ = set_volume(60, &app_state, &snapcast_state, &mut snapcast_client).await;
+                            let _ = set_volume(60.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
                         },
                         Action::SetVolumeTo70 => {
-                            let _ = set_volume(70, &app_state, &snapcast_state, &mut snapcast_client).await;
+                            let _ = set_volume(70.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
                         },
                         Action::SetVolumeTo80 => {
-                            let _ = set_volume(80, &app_state, &snapcast_state, &mut snapcast_client).await;
+                            let _ = set_volume(80.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
                         },
                         Action::SetVolumeTo90 => {
-                            let _ = set_volume(90, &app_state, &snapcast_state, &mut snapcast_client).await;
+                            let _ = set_volume(90.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
                         },
                         Action::SetVolumeTo100 => {
-                            let _ = set_volume(100, &app_state, &snapcast_state, &mut snapcast_client).await;
+                            let _ = set_volume(100.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
                         },
                         Action::ToggleMute => {
                             if let Some(id) = app_state.focus.as_ref() {
