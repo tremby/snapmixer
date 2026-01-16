@@ -281,6 +281,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let snapcast_state = snapcast_client.state.clone();
     let mut app_state = AppState::new();
 
+    let idle_duration = tokio::time::Duration::from_secs(5);
+    let idle_timer = tokio::time::sleep(idle_duration);
+    tokio::pin!(idle_timer);
+
     loop {
         let mut needs_redraw = false;
 
@@ -297,8 +301,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             },
 
+            () = &mut idle_timer => {
+                app_state.focus = None;
+                needs_redraw = true;
+                idle_timer.as_mut().reset(tokio::time::Instant::now() + tokio::time::Duration::from_secs(86400));
+            },
+
             maybe_event = input.next() => {
                 if let Some(Ok(Event::Key(key))) = maybe_event {
+                    idle_timer.as_mut().reset(tokio::time::Instant::now() + idle_duration);
+
                     let action = handle_key(key, &app_state);
                     match action {
                         Action::Exit => break,
