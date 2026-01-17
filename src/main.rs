@@ -1,33 +1,36 @@
+use clap::Parser;
 use crossterm::{
     event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use futures::StreamExt;
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Layout, Direction},
+    layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Clear, Gauge, Padding, Paragraph, Wrap},
 };
-use clap::Parser;
 use snapcast_control::{
-    SnapcastConnection,
-    State as SnapcastState,
-    client::Client as SnapcastClient,
+    SnapcastConnection, State as SnapcastState, client::Client as SnapcastClient,
     client::ClientVolume,
 };
-use tokio;
-use futures::StreamExt;
 use std::collections::HashMap;
 use supports_unicode::Stream;
+use tokio;
 
 #[derive(Parser)]
 #[command(name = "snapmixer")]
 #[command(about = "Text-mode volume mixer for Snapcast")]
 #[command(disable_help_flag = true)]
 struct Args {
-    #[arg(short, long, default_value = "localhost", help = "Snapcast server hostname or IP")]
+    #[arg(
+        short,
+        long,
+        default_value = "localhost",
+        help = "Snapcast server hostname or IP"
+    )]
     host: String,
 
     #[arg(short, long, default_value_t = 1705, help = "Snapcast server port")]
@@ -56,9 +59,14 @@ impl AppState {
         for entry in snapcast_state.clients.iter() {
             let client_id = entry.key();
             let current_volume = entry.value().config.volume.percent;
-            let fractional = self.fractional_volumes.get(client_id.as_str()).copied().unwrap_or(-1.0);
+            let fractional = self
+                .fractional_volumes
+                .get(client_id.as_str())
+                .copied()
+                .unwrap_or(-1.0);
             if current_volume != fractional.round() as usize {
-                self.fractional_volumes.insert(client_id.clone(), current_volume as f64);
+                self.fractional_volumes
+                    .insert(client_id.clone(), current_volume as f64);
             }
         }
     }
@@ -75,37 +83,43 @@ fn get_all_focusable_ids(snapcast_state: &SnapcastState) -> Vec<String> {
     return ids;
 }
 
-fn move_focus(delta: i16, app_state: &AppState, snapcast_state: &SnapcastState) -> Option<AppState> {
+fn move_focus(
+    delta: i16,
+    app_state: &AppState,
+    snapcast_state: &SnapcastState,
+) -> Option<AppState> {
     let focusable_ids = get_all_focusable_ids(&snapcast_state);
 
     let fallback = {
-        let current_index = if delta > 0 { -1 } else { focusable_ids.len() as i16 };
+        let current_index = if delta > 0 {
+            -1
+        } else {
+            focusable_ids.len() as i16
+        };
         let target_index = (current_index + delta).clamp(0, focusable_ids.len() as i16 - 1);
         Some(focusable_ids[target_index as usize].clone())
     };
 
     let new_focus = match &app_state.focus {
         None => fallback,
-        Some(current_focus) => {
-            match focusable_ids.iter().position(|s| s == current_focus) {
-                None => fallback,
-                Some(current_index) => {
-                    let target_index = current_index as i16 + delta;
-                    if target_index < 0 {
-                        if current_index > 0 {
-                            focusable_ids.first().cloned()
-                        } else {
-                            return None;
-                        }
-                    } else if target_index >= focusable_ids.len() as i16 {
-                        if current_index < focusable_ids.len() {
-                            focusable_ids.last().cloned()
-                        } else {
-                            return None;
-                        }
+        Some(current_focus) => match focusable_ids.iter().position(|s| s == current_focus) {
+            None => fallback,
+            Some(current_index) => {
+                let target_index = current_index as i16 + delta;
+                if target_index < 0 {
+                    if current_index > 0 {
+                        focusable_ids.first().cloned()
                     } else {
-                        Some(focusable_ids[target_index as usize].clone())
+                        return None;
                     }
+                } else if target_index >= focusable_ids.len() as i16 {
+                    if current_index < focusable_ids.len() {
+                        focusable_ids.last().cloned()
+                    } else {
+                        return None;
+                    }
+                } else {
+                    Some(focusable_ids[target_index as usize].clone())
                 }
             }
         },
@@ -131,53 +145,64 @@ fn get_group_id_of_client(client_id: String, snapcast_state: &SnapcastState) -> 
     });
 }
 
-fn move_focus_group(delta: i16, app_state: &AppState, snapcast_state: &SnapcastState) -> Option<AppState> {
-    let focusable_ids: Vec<String> = snapcast_state.groups.iter().map(|entry| entry.key().clone()).collect();
+fn move_focus_group(
+    delta: i16,
+    app_state: &AppState,
+    snapcast_state: &SnapcastState,
+) -> Option<AppState> {
+    let focusable_ids: Vec<String> = snapcast_state
+        .groups
+        .iter()
+        .map(|entry| entry.key().clone())
+        .collect();
 
     let fallback = {
-        let current_index = if delta > 0 { -1 } else { focusable_ids.len() as i16 };
+        let current_index = if delta > 0 {
+            -1
+        } else {
+            focusable_ids.len() as i16
+        };
         let target_index = (current_index + delta).clamp(0, focusable_ids.len() as i16 - 1);
         Some(focusable_ids[target_index as usize].clone())
     };
 
     let new_focus = match &app_state.focus {
         None => fallback,
-        Some(current_focus) => {
-            match focusable_ids.iter().position(|s| s == current_focus) {
-                None => {
-                    match get_group_id_of_client(current_focus.to_string(), &snapcast_state) {
+        Some(current_focus) => match focusable_ids.iter().position(|s| s == current_focus) {
+            None => match get_group_id_of_client(current_focus.to_string(), &snapcast_state) {
+                None => fallback,
+                Some(current_group_id) => {
+                    match focusable_ids.iter().position(|t| t == &current_group_id) {
                         None => fallback,
-                        Some(current_group_id) => {
-                            match focusable_ids.iter().position(|t| t == &current_group_id) {
-                                None => fallback,
-                                Some(parent_group_index) => {
-                                    let target_index = (parent_group_index as i16 + delta + (if delta > 0 { 0 } else { 1 })).clamp(0, focusable_ids.len() as i16);
-                                    Some(focusable_ids[target_index as usize].clone())
-                                }
-                            }
-                        },
+                        Some(parent_group_index) => {
+                            let target_index = (parent_group_index as i16
+                                + delta
+                                + (if delta > 0 { 0 } else { 1 }))
+                            .clamp(0, focusable_ids.len() as i16);
+                            Some(focusable_ids[target_index as usize].clone())
+                        }
                     }
                 }
-                Some(current_index) => {
-                    let target_index = current_index as i16 + delta;
-                    if target_index < 0 {
-                        if current_index > 0 {
-                            focusable_ids.first().cloned()
-                        } else {
-                            return None;
-                        }
-                    } else if target_index >= focusable_ids.len() as i16 {
-                        if current_index < focusable_ids.len() {
-                            focusable_ids.last().cloned()
-                        } else {
-                            return None;
-                        }
+            },
+            Some(current_index) => {
+                let target_index = current_index as i16 + delta;
+                if target_index < 0 {
+                    if current_index > 0 {
+                        focusable_ids.first().cloned()
                     } else {
-                        Some(focusable_ids[target_index as usize].clone())
+                        return None;
                     }
+                } else if target_index >= focusable_ids.len() as i16 {
+                    if current_index < focusable_ids.len() {
+                        focusable_ids.last().cloned()
+                    } else {
+                        return None;
+                    }
+                } else {
+                    Some(focusable_ids[target_index as usize].clone())
                 }
             }
-        }
+        },
     };
 
     if new_focus != app_state.focus {
@@ -190,57 +215,101 @@ fn move_focus_group(delta: i16, app_state: &AppState, snapcast_state: &SnapcastS
     return None;
 }
 
-async fn set_volume(volume: f64, app_state: &mut AppState, snapcast_state: &SnapcastState, snapcast_client: &mut SnapcastConnection) {
+async fn set_volume(
+    volume: f64,
+    app_state: &mut AppState,
+    snapcast_state: &SnapcastState,
+    snapcast_client: &mut SnapcastConnection,
+) {
     let target_volume = volume.clamp(0.0, 100.0);
     let id = match app_state.focus.as_ref() {
         Some(id) => id,
         None => return,
     };
     if let Some(group) = snapcast_state.groups.get(id) {
-        let group_clients: Vec<SnapcastClient> = snapcast_state.clients.iter()
+        let group_clients: Vec<SnapcastClient> = snapcast_state
+            .clients
+            .iter()
             .filter(|entry| group.clients.contains(entry.key()))
             .map(|entry| entry.value().clone())
             .collect();
 
         // Find loudest client
-        let loudest_fractional = group_clients.iter()
-            .map(|client| app_state.fractional_volumes.get(&client.id).copied().unwrap_or(client.config.volume.percent as f64))
+        let loudest_fractional = group_clients
+            .iter()
+            .map(|client| {
+                app_state
+                    .fractional_volumes
+                    .get(&client.id)
+                    .copied()
+                    .unwrap_or(client.config.volume.percent as f64)
+            })
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap_or(0.0);
 
         if loudest_fractional == 0.0 {
             // Avoid division by zero
             for client in group_clients.iter() {
-                app_state.fractional_volumes.insert(client.id.clone(), target_volume);
-                let _ = snapcast_client.client_set_volume(client.id.to_string(), ClientVolume {
-                    percent: target_volume.round() as usize,
-                    ..client.config.volume
-                }).await;
+                app_state
+                    .fractional_volumes
+                    .insert(client.id.clone(), target_volume);
+                let _ = snapcast_client
+                    .client_set_volume(
+                        client.id.to_string(),
+                        ClientVolume {
+                            percent: target_volume.round() as usize,
+                            ..client.config.volume
+                        },
+                    )
+                    .await;
             }
         } else {
             // Scale proportionally using fractional volumes
             let factor = target_volume / loudest_fractional;
             for client in group_clients.iter() {
-                let current_fractional = app_state.fractional_volumes.get(&client.id).copied().unwrap_or(client.config.volume.percent as f64);
+                let current_fractional = app_state
+                    .fractional_volumes
+                    .get(&client.id)
+                    .copied()
+                    .unwrap_or(client.config.volume.percent as f64);
                 let new_fractional = (current_fractional * factor).clamp(0.0, 100.0);
-                app_state.fractional_volumes.insert(client.id.clone(), new_fractional);
+                app_state
+                    .fractional_volumes
+                    .insert(client.id.clone(), new_fractional);
 
-                let _ = snapcast_client.client_set_volume(client.id.to_string(), ClientVolume {
-                    percent: new_fractional.round() as usize,
-                    ..client.config.volume
-                }).await;
+                let _ = snapcast_client
+                    .client_set_volume(
+                        client.id.to_string(),
+                        ClientVolume {
+                            percent: new_fractional.round() as usize,
+                            ..client.config.volume
+                        },
+                    )
+                    .await;
             }
         }
     } else if let Some(client) = snapcast_state.clients.get(id) {
-        app_state.fractional_volumes.insert(client.id.clone(), target_volume);
-        let _ = snapcast_client.client_set_volume(client.id.to_string(), ClientVolume {
-            percent: target_volume.round() as usize,
-            ..client.config.volume
-        }).await;
+        app_state
+            .fractional_volumes
+            .insert(client.id.clone(), target_volume);
+        let _ = snapcast_client
+            .client_set_volume(
+                client.id.to_string(),
+                ClientVolume {
+                    percent: target_volume.round() as usize,
+                    ..client.config.volume
+                },
+            )
+            .await;
     }
 }
 
-async fn set_volume_delta(delta: f64, app_state: &mut AppState, snapcast_state: &SnapcastState, snapcast_client: &mut SnapcastConnection) {
+async fn set_volume_delta(
+    delta: f64,
+    app_state: &mut AppState,
+    snapcast_state: &SnapcastState,
+    snapcast_client: &mut SnapcastConnection,
+) {
     let id = match app_state.focus.as_ref() {
         Some(id) => id,
         None => return,
@@ -248,14 +317,27 @@ async fn set_volume_delta(delta: f64, app_state: &mut AppState, snapcast_state: 
 
     let current_volume = if let Some(group) = snapcast_state.groups.get(id) {
         // Find loudest client in group using fractional volumes
-        snapcast_state.clients.iter()
+        snapcast_state
+            .clients
+            .iter()
             .filter(|entry| group.clients.contains(entry.key()))
-            .map(|entry| app_state.fractional_volumes.get(entry.key()).copied().unwrap_or(entry.value().config.volume.percent as f64))
+            .map(|entry| {
+                app_state
+                    .fractional_volumes
+                    .get(entry.key())
+                    .copied()
+                    .unwrap_or(entry.value().config.volume.percent as f64)
+            })
             .max_by(|a, b| a.partial_cmp(b).unwrap())
     } else {
         // Single client
-        snapcast_state.clients.get(id)
-            .map(|entry| app_state.fractional_volumes.get(entry.key()).copied().unwrap_or(entry.value().config.volume.percent as f64))
+        snapcast_state.clients.get(id).map(|entry| {
+            app_state
+                .fractional_volumes
+                .get(entry.key())
+                .copied()
+                .unwrap_or(entry.value().config.volume.percent as f64)
+        })
     };
 
     if let Some(current) = current_volume {
@@ -283,7 +365,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut snapcast_client = SnapcastConnection::open(socket_addr).await;
 
-    snapcast_client.server_get_status().await.expect("Could not send request");
+    snapcast_client
+        .server_get_status()
+        .await
+        .expect("Could not send request");
 
     // Set up terminal
     let mut stdout = std::io::stdout();
@@ -484,13 +569,17 @@ fn handle_key(key: KeyEvent, app_state: &AppState) -> Action {
             KeyCode::Char('j') => Action::Next,
 
             // Volume down
-            KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => Action::ReduceVolumeMore,
+            KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                Action::ReduceVolumeMore
+            }
             KeyCode::Char('H') => Action::ReduceVolumeMore,
             KeyCode::Left => Action::ReduceVolume,
             KeyCode::Char('h') => Action::ReduceVolume,
 
             // Volume up
-            KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => Action::RaiseVolumeMore,
+            KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                Action::RaiseVolumeMore
+            }
             KeyCode::Char('L') => Action::RaiseVolumeMore,
             KeyCode::Right => Action::RaiseVolume,
             KeyCode::Char('l') => Action::RaiseVolume,
@@ -518,15 +607,17 @@ fn handle_key(key: KeyEvent, app_state: &AppState) -> Action {
 fn get_client_name(client: &SnapcastClient) -> String {
     if client.config.name.is_empty() {
         if !client.host.name.is_empty() {
-            return format!("Client on host {}", client.host.name)
+            return format!("Client on host {}", client.host.name);
         }
-        return format!("Client with ID {}", client.id)
+        return format!("Client with ID {}", client.id);
     }
     return client.config.name.clone();
 }
 
 fn get_longest_client_name_length(snapcast_state: &SnapcastState) -> usize {
-    snapcast_state.clients.iter()
+    snapcast_state
+        .clients
+        .iter()
         .map(|c| get_client_name(&c).len())
         .max()
         .unwrap_or(0)
@@ -540,115 +631,150 @@ fn get_volume_symbol(muted: bool) -> Span<'static> {
             if muted { "M" } else { " " }
         }
     };
-    return Span::styled(symbol, Style::default().fg(if muted { Color::Red } else { Color::Green }))
+    return Span::styled(
+        symbol,
+        Style::default().fg(if muted { Color::Red } else { Color::Green }),
+    );
 }
 
-fn draw_ui(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, app_state: &AppState, snapcast_state: &SnapcastState) {
-    terminal.draw(|frame| {
-        // Set up main layout and reserve space for each group
-        let groups_layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(snapcast_state.groups.iter().map(|group| {
-                let len = group.value().clients.len() as u16;
-                Constraint::Length(len + 2) // +2 for top/bottom borders
-            }))
-            .split(frame.area());
+fn draw_ui(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    app_state: &AppState,
+    snapcast_state: &SnapcastState,
+) {
+    terminal
+        .draw(|frame| {
+            // Set up main layout and reserve space for each group
+            let groups_layout = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(snapcast_state.groups.iter().map(|group| {
+                    let len = group.value().clients.len() as u16;
+                    Constraint::Length(len + 2) // +2 for top/bottom borders
+                }))
+                .split(frame.area());
 
-        let longest_client_name_length = get_longest_client_name_length(&snapcast_state);
+            let longest_client_name_length = get_longest_client_name_length(&snapcast_state);
 
-        // Render each group
-        for (index, entry) in snapcast_state.groups.iter().enumerate() {
-            let (group_id, group) = (entry.key(), entry.value());
+            // Render each group
+            for (index, entry) in snapcast_state.groups.iter().enumerate() {
+                let (group_id, group) = (entry.key(), entry.value());
 
-            // Decide on group display name
-            let group_name = if group.name.is_empty() {
-                format!("Group with ID {}", group_id)
-            } else {
-                group.name.clone()
-            };
-
-            // Put together full title
-            let title_style = if app_state.focus.as_deref() == Some(&group.id) { Style::default() } else { Style::default().fg(Color::Reset) };
-            let block_title = Line::from(vec![
-                get_volume_symbol(group.muted),
-                Span::raw(" "),
-                Span::styled(group_name, title_style.add_modifier(Modifier::BOLD)),
-                Span::raw(" "),
-            ]);
-
-            // Group block
-            let block = Block::bordered()
-                .border_style(Style::default().fg(if app_state.focus.as_deref() == Some(&group.id) { Color::Yellow } else { Color::Indexed(236) }))
-                .border_type(ratatui::widgets::BorderType::Rounded)
-                .padding(Padding::new(1, 1, 0, 0))
-                .title(block_title);
-            frame.render_widget(&block, groups_layout[index]);
-
-            // Render each client
-            let block_inner = block.inner(groups_layout[index]);
-            let client_constraints = vec![Constraint::Length(1); group.clients.len()];
-            let client_rows = Layout::vertical(client_constraints).split(block_inner);
-            for (index, client_id) in group.clients.iter().enumerate() {
-                let client_row = client_rows[index];
-                let client = match snapcast_state.clients.get(client_id) {
-                    Some(c) => c,
-                    None => continue,
-                };
-
-                // Styled name
-                let client_name = get_client_name(&client);
-                let name_span = if app_state.focus.as_deref() == Some(&client.id) {
-                    Span::styled(
-                        client_name,
-                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-                    )
+                // Decide on group display name
+                let group_name = if group.name.is_empty() {
+                    format!("Group with ID {}", group_id)
                 } else {
-                    Span::raw(client_name)
+                    group.name.clone()
                 };
 
-                // Volume gauge
-                let gauge = Gauge::default()
-                    .ratio(client.config.volume.percent as f64 / 100.0)
-                    .gauge_style(
-                        Style::default().fg(
+                // Put together full title
+                let title_style = if app_state.focus.as_deref() == Some(&group.id) {
+                    Style::default()
+                } else {
+                    Style::default().fg(Color::Reset)
+                };
+                let block_title = Line::from(vec![
+                    get_volume_symbol(group.muted),
+                    Span::raw(" "),
+                    Span::styled(group_name, title_style.add_modifier(Modifier::BOLD)),
+                    Span::raw(" "),
+                ]);
+
+                // Group block
+                let block = Block::bordered()
+                    .border_style(Style::default().fg(
+                        if app_state.focus.as_deref() == Some(&group.id) {
+                            Color::Yellow
+                        } else {
+                            Color::Indexed(236)
+                        },
+                    ))
+                    .border_type(ratatui::widgets::BorderType::Rounded)
+                    .padding(Padding::new(1, 1, 0, 0))
+                    .title(block_title);
+                frame.render_widget(&block, groups_layout[index]);
+
+                // Render each client
+                let block_inner = block.inner(groups_layout[index]);
+                let client_constraints = vec![Constraint::Length(1); group.clients.len()];
+                let client_rows = Layout::vertical(client_constraints).split(block_inner);
+                for (index, client_id) in group.clients.iter().enumerate() {
+                    let client_row = client_rows[index];
+                    let client = match snapcast_state.clients.get(client_id) {
+                        Some(c) => c,
+                        None => continue,
+                    };
+
+                    // Styled name
+                    let client_name = get_client_name(&client);
+                    let name_span = if app_state.focus.as_deref() == Some(&client.id) {
+                        Span::styled(
+                            client_name,
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        )
+                    } else {
+                        Span::raw(client_name)
+                    };
+
+                    // Volume gauge
+                    let gauge = Gauge::default()
+                        .ratio(client.config.volume.percent as f64 / 100.0)
+                        .gauge_style(Style::default().fg(
                             if app_state.focus.as_deref() == Some(&client.id) {
                                 Color::Yellow
                             } else if group.muted || client.config.volume.muted {
                                 Color::Indexed(238)
                             } else {
                                 Color::Blue
-                            }
-                        ),
+                            },
+                        ));
+
+                    // Lay out the parts
+                    let parts = Layout::horizontal([
+                        Constraint::Length(longest_client_name_length as u16), // name
+                        Constraint::Length(1),                                 // gap
+                        Constraint::Length(2),                                 // mute
+                        Constraint::Length(1),                                 // gap
+                        Constraint::Min(10),                                   // gauge
+                    ])
+                    .split(client_row);
+                    frame.render_widget(
+                        Paragraph::new(Line::from(vec![name_span]).alignment(Alignment::Right)),
+                        parts[0],
                     );
-
-                // Lay out the parts
-                let parts = Layout::horizontal([
-                    Constraint::Length(longest_client_name_length as u16), // name
-                    Constraint::Length(1), // gap
-                    Constraint::Length(2), // mute
-                    Constraint::Length(1), // gap
-                    Constraint::Min(10), // gauge
-                ]).split(client_row);
-                frame.render_widget(Paragraph::new(Line::from(vec![name_span]).alignment(Alignment::Right)), parts[0]);
-                frame.render_widget(Paragraph::new(Line::from(vec![get_volume_symbol(client.config.volume.muted)])), parts[2]);
-                frame.render_widget(gauge, parts[4]);
+                    frame.render_widget(
+                        Paragraph::new(Line::from(vec![get_volume_symbol(
+                            client.config.volume.muted,
+                        )])),
+                        parts[2],
+                    );
+                    frame.render_widget(gauge, parts[4]);
+                }
             }
-        }
 
-        if !app_state.error_messages.is_empty() {
-            let error_area = frame.area().centered(Constraint::Percentage(80), Constraint::Percentage(50));
-            frame.render_widget(Clear, error_area);
-            let error_block = Block::bordered()
-                .border_style(Style::default().fg(Color::Red))
-                .border_type(ratatui::widgets::BorderType::Rounded)
-                .padding(Padding::new(1, 1, 0, 0))
-                .title(Span::styled(" Error ", Style::default().fg(Color::Reset).add_modifier(Modifier::BOLD)))
-                .title(Line::from(" esc to dismiss ").right_aligned());
-            frame.render_widget(&error_block, error_area);
-            let error_block_inner = error_block.inner(error_area);
-            let paragraph = Paragraph::new(app_state.error_messages.join("\n")).wrap(Wrap { trim: false });
-            frame.render_widget(paragraph, error_block_inner);
-        }
-
-    }).unwrap();
+            if !app_state.error_messages.is_empty() {
+                let error_area = frame
+                    .area()
+                    .centered(Constraint::Percentage(80), Constraint::Percentage(50));
+                frame.render_widget(Clear, error_area);
+                let error_block = Block::bordered()
+                    .border_style(Style::default().fg(Color::Red))
+                    .border_type(ratatui::widgets::BorderType::Rounded)
+                    .padding(Padding::new(1, 1, 0, 0))
+                    .title(Span::styled(
+                        " Error ",
+                        Style::default()
+                            .fg(Color::Reset)
+                            .add_modifier(Modifier::BOLD),
+                    ))
+                    .title(Line::from(" esc to dismiss ").right_aligned());
+                frame.render_widget(&error_block, error_area);
+                let error_block_inner = error_block.inner(error_area);
+                let paragraph =
+                    Paragraph::new(app_state.error_messages.join("\n")).wrap(Wrap { trim: false });
+                frame.render_widget(paragraph, error_block_inner);
+            }
+        })
+        .unwrap();
 }
