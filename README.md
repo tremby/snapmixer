@@ -31,7 +31,6 @@ Things I want to implement:
 
 - Error handling of any kind.
 - Detect lack of unicode support → don't use fancy volume icons.
-- Support shorthands `-h` (override the one for help) and `-p` on command line.
 - Scrolling if there isn't enough screen space.
 - In-app help page showing the bindings, triggered with `F1` or `?`.
 
