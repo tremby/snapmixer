@@ -315,98 +315,100 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
 
             maybe_event = input.next() => {
-                if let Some(Ok(Event::Key(key))) = maybe_event {
-                    let action = handle_key(key, &app_state);
-                    match action {
-                        Action::Exit => break,
-                        Action::Dismiss => {
-                            if app_state.error_messages.is_empty() {
-                                // No errors to dismiss; dismiss the whole app
-                                break;
-                            } else {
-                                app_state.error_messages.clear();
-                                needs_redraw = true;
-                            }
-                        }
-                        Action::Prev => {
-                            if let Some(new_state) = move_focus(-1, &app_state, &snapcast_state) {
-                                app_state = new_state;
-                                needs_redraw = true;
-                            }
-                        }
-                        Action::Next => {
-                            if let Some(new_state) = move_focus(1, &app_state, &snapcast_state) {
-                                app_state = new_state;
-                                needs_redraw = true;
-                            }
-                        },
-                        Action::PrevGroup => {
-                            if let Some(new_state) = move_focus_group(-1, &app_state, &snapcast_state) {
-                                app_state = new_state;
-                                needs_redraw = true;
-                            }
-                        },
-                        Action::NextGroup => {
-                            if let Some(new_state) = move_focus_group(1, &app_state, &snapcast_state) {
-                                app_state = new_state;
-                                needs_redraw = true;
-                            }
-                        },
-                        Action::ReduceVolume => {
-                            let _ = set_volume_delta(-1.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-                        },
-                        Action::ReduceVolumeMore => {
-                            let _ = set_volume_delta(-5.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-                        },
-                        Action::RaiseVolume => {
-                            let _ = set_volume_delta(1.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-                        },
-                        Action::RaiseVolumeMore => {
-                            let _ = set_volume_delta(5.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-                        },
-                        Action::SetVolumeTo10 => {
-                            let _ = set_volume(10.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-                        },
-                        Action::SetVolumeTo20 => {
-                            let _ = set_volume(20.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-                        },
-                        Action::SetVolumeTo30 => {
-                            let _ = set_volume(30.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-                        },
-                        Action::SetVolumeTo40 => {
-                            let _ = set_volume(40.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-                        },
-                        Action::SetVolumeTo50 => {
-                            let _ = set_volume(50.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-                        },
-                        Action::SetVolumeTo60 => {
-                            let _ = set_volume(60.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-                        },
-                        Action::SetVolumeTo70 => {
-                            let _ = set_volume(70.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-                        },
-                        Action::SetVolumeTo80 => {
-                            let _ = set_volume(80.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-                        },
-                        Action::SetVolumeTo90 => {
-                            let _ = set_volume(90.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-                        },
-                        Action::SetVolumeTo100 => {
-                            let _ = set_volume(100.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-                        },
-                        Action::ToggleMute => {
-                            if let Some(id) = app_state.focus.as_ref() {
-                                if let Some(group) = snapcast_state.groups.get(id) {
-                                    let _ = snapcast_client.group_set_mute(group.id.to_string(), !group.muted).await;
-                                } else if let Some(client) = snapcast_state.clients.get(id) {
-                                    let _ = snapcast_client.client_set_volume(client.id.to_string(), ClientVolume {
-                                        muted: !client.config.volume.muted,
-                                        ..client.config.volume
-                                    }).await;
+                if let Some(Ok(event)) = maybe_event {
+                    match event {
+                        Event::Key(key) => match handle_key(key, &app_state) {
+                            Action::Exit => break,
+                            Action::Dismiss => {
+                                if app_state.error_messages.is_empty() {
+                                    // No errors to dismiss; dismiss the whole app
+                                    break;
+                                } else {
+                                    app_state.error_messages.clear();
+                                    needs_redraw = true;
                                 }
                             }
-                        },
-                        Action::None => {},
+                            Action::Prev => {
+                                if let Some(new_state) = move_focus(-1, &app_state, &snapcast_state) {
+                                    app_state = new_state;
+                                    needs_redraw = true;
+                                }
+                            }
+                            Action::Next => {
+                                if let Some(new_state) = move_focus(1, &app_state, &snapcast_state) {
+                                    app_state = new_state;
+                                    needs_redraw = true;
+                                }
+                            },
+                            Action::PrevGroup => {
+                                if let Some(new_state) = move_focus_group(-1, &app_state, &snapcast_state) {
+                                    app_state = new_state;
+                                    needs_redraw = true;
+                                }
+                            },
+                            Action::NextGroup => {
+                                if let Some(new_state) = move_focus_group(1, &app_state, &snapcast_state) {
+                                    app_state = new_state;
+                                    needs_redraw = true;
+                                }
+                            },
+                            Action::ReduceVolume => {
+                                let _ = set_volume_delta(-1.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+                            },
+                            Action::ReduceVolumeMore => {
+                                let _ = set_volume_delta(-5.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+                            },
+                            Action::RaiseVolume => {
+                                let _ = set_volume_delta(1.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+                            },
+                            Action::RaiseVolumeMore => {
+                                let _ = set_volume_delta(5.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+                            },
+                            Action::SetVolumeTo10 => {
+                                let _ = set_volume(10.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+                            },
+                            Action::SetVolumeTo20 => {
+                                let _ = set_volume(20.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+                            },
+                            Action::SetVolumeTo30 => {
+                                let _ = set_volume(30.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+                            },
+                            Action::SetVolumeTo40 => {
+                                let _ = set_volume(40.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+                            },
+                            Action::SetVolumeTo50 => {
+                                let _ = set_volume(50.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+                            },
+                            Action::SetVolumeTo60 => {
+                                let _ = set_volume(60.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+                            },
+                            Action::SetVolumeTo70 => {
+                                let _ = set_volume(70.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+                            },
+                            Action::SetVolumeTo80 => {
+                                let _ = set_volume(80.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+                            },
+                            Action::SetVolumeTo90 => {
+                                let _ = set_volume(90.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+                            },
+                            Action::SetVolumeTo100 => {
+                                let _ = set_volume(100.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+                            },
+                            Action::ToggleMute => {
+                                if let Some(id) = app_state.focus.as_ref() {
+                                    if let Some(group) = snapcast_state.groups.get(id) {
+                                        let _ = snapcast_client.group_set_mute(group.id.to_string(), !group.muted).await;
+                                    } else if let Some(client) = snapcast_state.clients.get(id) {
+                                        let _ = snapcast_client.client_set_volume(client.id.to_string(), ClientVolume {
+                                            muted: !client.config.volume.muted,
+                                            ..client.config.volume
+                                        }).await;
+                                    }
+                                }
+                            },
+                            Action::None => {},
+                        }
+                        _ => {}
                     }
                 }
             }
