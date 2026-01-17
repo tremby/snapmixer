@@ -23,7 +23,7 @@ use std::collections::HashMap;
 
 #[derive(Parser)]
 #[command(name = "snapmixer")]
-#[command(about = "Control Snapcast client volumes")]
+#[command(about = "Text-mode volume mixer for Snapcast")]
 struct Args {
     #[arg(long, default_value = "localhost")]
     host: String,

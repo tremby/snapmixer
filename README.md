@@ -1,7 +1,7 @@
 Snapmixer
 =========
 
-This is a console-based volume control for
+This is a text-mode volume mixer for
 [Snapcast](https://github.com/badaix/snapcast).
 
 It is not yet properly packaged for release.
