@@ -408,6 +408,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             },
                             Action::None => {},
                         }
+                        Event::Resize(_, _) => needs_redraw = true,
                         _ => {}
                     }
                 }
