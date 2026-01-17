@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Direction},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Gauge, Padding, Paragraph},
+    widgets::{Block, Clear, Gauge, Padding, Paragraph, Wrap},
 };
 use clap::Parser;
 use snapcast_control::{
@@ -39,6 +39,7 @@ struct Args {
 struct AppState {
     focus: Option<String>,
     fractional_volumes: HashMap<String, f64>, // client_id -> fractional volume
+    error_messages: Vec<String>,
 }
 
 impl AppState {
@@ -46,6 +47,7 @@ impl AppState {
         Self {
             focus: None,
             fractional_volumes: HashMap::new(),
+            error_messages: Vec::new(),
         }
     }
 
@@ -112,6 +114,7 @@ fn move_focus(delta: i16, app_state: &AppState, snapcast_state: &SnapcastState) 
         return Some(AppState {
             focus: new_focus,
             fractional_volumes: app_state.fractional_volumes.clone(),
+            error_messages: app_state.error_messages.clone(),
         });
     }
     return None;
@@ -180,6 +183,7 @@ fn move_focus_group(delta: i16, app_state: &AppState, snapcast_state: &SnapcastS
         return Some(AppState {
             focus: new_focus,
             fractional_volumes: app_state.fractional_volumes.clone(),
+            error_messages: app_state.error_messages.clone(),
         });
     }
     return None;
@@ -296,7 +300,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         needs_redraw = true;
                     }
                     Err(err) => {
-                        eprintln!("Got error {err}");
+                        app_state.error_messages.push(format!("{}", err));
+                        needs_redraw = true;
                     }
                 }
             },
@@ -306,6 +311,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let action = handle_key(key, &app_state);
                     match action {
                         Action::Exit => break,
+                        Action::Dismiss => {
+                            if app_state.error_messages.is_empty() {
+                                // No errors to dismiss; dismiss the whole app
+                                break;
+                            } else {
+                                app_state.error_messages.clear();
+                                needs_redraw = true;
+                            }
+                        }
                         Action::Prev => {
                             if let Some(new_state) = move_focus(-1, &app_state, &snapcast_state) {
                                 app_state = new_state;
@@ -403,6 +417,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 enum Action {
+    Dismiss,
     Exit,
     Prev,
     PrevGroup,
@@ -426,57 +441,66 @@ enum Action {
     None,
 }
 
-fn handle_key(key: KeyEvent, _app_state: &AppState) -> Action {
+fn handle_key(key: KeyEvent, app_state: &AppState) -> Action {
     if key.kind != KeyEventKind::Press {
         return Action::None;
     }
 
-    match key.code {
-        // Exit
-        KeyCode::Esc => Action::Exit,
-        KeyCode::Char('q') => Action::Exit,
-        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Exit,
+    if !app_state.error_messages.is_empty() {
+        match key.code {
+            KeyCode::Esc => Action::Dismiss,
+            _ => Action::None,
+        }
+    } else {
+        match key.code {
+            // Dismiss
+            KeyCode::Esc => Action::Dismiss,
 
-        // Move between groups
-        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => Action::PrevGroup,
-        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => Action::NextGroup,
-        KeyCode::Char('K') => Action::PrevGroup,
-        KeyCode::Char('J') => Action::NextGroup,
+            // Exit
+            KeyCode::Char('q') => Action::Exit,
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Exit,
 
-        // Move to neighbouring rows
-        KeyCode::Up => Action::Prev,
-        KeyCode::Down => Action::Next,
-        KeyCode::Char('k') => Action::Prev,
-        KeyCode::Char('j') => Action::Next,
+            // Move between groups
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => Action::PrevGroup,
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => Action::NextGroup,
+            KeyCode::Char('K') => Action::PrevGroup,
+            KeyCode::Char('J') => Action::NextGroup,
 
-        // Volume down
-        KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => Action::ReduceVolumeMore,
-        KeyCode::Char('H') => Action::ReduceVolumeMore,
-        KeyCode::Left => Action::ReduceVolume,
-        KeyCode::Char('h') => Action::ReduceVolume,
+            // Move to neighbouring rows
+            KeyCode::Up => Action::Prev,
+            KeyCode::Down => Action::Next,
+            KeyCode::Char('k') => Action::Prev,
+            KeyCode::Char('j') => Action::Next,
 
-        // Volume up
-        KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => Action::RaiseVolumeMore,
-        KeyCode::Char('L') => Action::RaiseVolumeMore,
-        KeyCode::Right => Action::RaiseVolume,
-        KeyCode::Char('l') => Action::RaiseVolume,
+            // Volume down
+            KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => Action::ReduceVolumeMore,
+            KeyCode::Char('H') => Action::ReduceVolumeMore,
+            KeyCode::Left => Action::ReduceVolume,
+            KeyCode::Char('h') => Action::ReduceVolume,
 
-        // Snap volume
-        KeyCode::Char('1') => Action::SetVolumeTo10,
-        KeyCode::Char('2') => Action::SetVolumeTo20,
-        KeyCode::Char('3') => Action::SetVolumeTo30,
-        KeyCode::Char('4') => Action::SetVolumeTo40,
-        KeyCode::Char('5') => Action::SetVolumeTo50,
-        KeyCode::Char('6') => Action::SetVolumeTo60,
-        KeyCode::Char('7') => Action::SetVolumeTo70,
-        KeyCode::Char('8') => Action::SetVolumeTo80,
-        KeyCode::Char('9') => Action::SetVolumeTo90,
-        KeyCode::Char('0') => Action::SetVolumeTo100,
+            // Volume up
+            KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => Action::RaiseVolumeMore,
+            KeyCode::Char('L') => Action::RaiseVolumeMore,
+            KeyCode::Right => Action::RaiseVolume,
+            KeyCode::Char('l') => Action::RaiseVolume,
 
-        // Mute
-        KeyCode::Char('m') => Action::ToggleMute,
+            // Snap volume
+            KeyCode::Char('1') => Action::SetVolumeTo10,
+            KeyCode::Char('2') => Action::SetVolumeTo20,
+            KeyCode::Char('3') => Action::SetVolumeTo30,
+            KeyCode::Char('4') => Action::SetVolumeTo40,
+            KeyCode::Char('5') => Action::SetVolumeTo50,
+            KeyCode::Char('6') => Action::SetVolumeTo60,
+            KeyCode::Char('7') => Action::SetVolumeTo70,
+            KeyCode::Char('8') => Action::SetVolumeTo80,
+            KeyCode::Char('9') => Action::SetVolumeTo90,
+            KeyCode::Char('0') => Action::SetVolumeTo100,
 
-        _ => Action::None,
+            // Mute
+            KeyCode::Char('m') => Action::ToggleMute,
+
+            _ => Action::None,
+        }
     }
 }
 
@@ -542,8 +566,7 @@ fn draw_ui(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, app_state
             ]);
 
             // Group block
-            let block = Block::default()
-                .borders(ratatui::widgets::Borders::ALL)
+            let block = Block::bordered()
                 .border_style(Style::default().fg(if app_state.focus.as_deref() == Some(&group.id) { Color::Yellow } else { Color::Indexed(236) }))
                 .border_type(ratatui::widgets::BorderType::Rounded)
                 .padding(Padding::new(1, 1, 0, 0))
@@ -599,6 +622,21 @@ fn draw_ui(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>, app_state
                 frame.render_widget(Paragraph::new(Line::from(vec![get_volume_symbol(client.config.volume.muted)])), parts[2]);
                 frame.render_widget(gauge, parts[4]);
             }
+        }
+
+        if !app_state.error_messages.is_empty() {
+            let error_area = frame.area().centered(Constraint::Percentage(80), Constraint::Percentage(50));
+            frame.render_widget(Clear, error_area);
+            let error_block = Block::bordered()
+                .border_style(Style::default().fg(Color::Red))
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .padding(Padding::new(1, 1, 0, 0))
+                .title(Span::styled(" Error ", Style::default().fg(Color::Reset).add_modifier(Modifier::BOLD)))
+                .title(Line::from(" esc to dismiss ").right_aligned());
+            frame.render_widget(&error_block, error_area);
+            let error_block_inner = error_block.inner(error_area);
+            let paragraph = Paragraph::new(app_state.error_messages.join("\n")).wrap(Wrap { trim: false });
+            frame.render_widget(paragraph, error_block_inner);
         }
 
     }).unwrap();
