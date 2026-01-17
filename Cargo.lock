@@ -1729,6 +1729,7 @@ dependencies = [
  "futures",
  "ratatui",
  "snapcast-control",
+ "supports-unicode",
  "tokio",
  "tokio-util",
 ]
@@ -1786,6 +1787,12 @@ dependencies = [
  "rand",
  "tokio",
 ]
+
+[[package]]
+name = "supports-unicode"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7401a30af6cb5818bb64852270bb722533397edcfc7344954a38f420819ece2"
 
 [[package]]
 name = "syn"

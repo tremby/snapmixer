@@ -20,6 +20,7 @@ use snapcast_control::{
 use tokio;
 use futures::StreamExt;
 use std::collections::HashMap;
+use supports_unicode::Stream;
 
 #[derive(Parser)]
 #[command(name = "snapmixer")]
@@ -530,10 +531,10 @@ fn get_longest_client_name_length(snapcast_state: &SnapcastState) -> usize {
 
 fn get_volume_symbol(muted: bool) -> Span<'static> {
     let symbol = {
-        if muted {
-            "🔇"
+        if supports_unicode::on(Stream::Stdout) {
+            if muted { "🔇" } else { "🔊" }
         } else {
-            "🔊"
+            if muted { "M" } else { " " }
         }
     };
     return Span::styled(symbol, Style::default().fg(if muted { Color::Red } else { Color::Green }))

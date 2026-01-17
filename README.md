@@ -29,7 +29,6 @@ Todo
 
 Things I want to implement:
 
-- Detect lack of unicode support → don't use fancy volume icons.
 - Scrolling if there isn't enough screen space.
 - Scrolling on the error overlay.
 - In-app help page showing the bindings, triggered with `F1` or `?`.
