@@ -409,14 +409,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 		tokio::select! {
 			Some(messages) = snapcast_client.recv() => {
-				match message {
-					Ok(_) => {
-						app_state.update_fractional_volumes(&snapcast_state);
-						needs_redraw = true;
-					}
-					Err(err) => {
-						app_state.error_messages.push(format!("{}", err));
-						needs_redraw = true;
+				for message in messages {
+					match message {
+						Ok(_) => {
+							app_state.update_fractional_volumes(&snapcast_state);
+							needs_redraw = true;
+						}
+						Err(err) => {
+							app_state.error_messages.push(format!("{}", err));
+							needs_redraw = true;
+						}
 					}
 				}
 			},
