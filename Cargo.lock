@@ -1703,8 +1703,7 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 [[package]]
 name = "snapcast-control"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c57eb9aeb39a6b61d6cc64c68540e8aa8a0778ecbc52cd9fafe7acc7c3668c36"
+source = "git+https://github.com/tremby/snapcast-control?branch=handle-batches#dede4fa6f67867a45ec7ff7c57a861883cff7813"
 dependencies = [
  "dashmap",
  "futures",
