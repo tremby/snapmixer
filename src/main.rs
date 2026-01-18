@@ -380,17 +380,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		.await
 		.map_err(|e| format!("DNS lookup failed: {}", e))?
 		.next()
-		.ok_or("Couldn't connect to Snapcast server")?;
+		.ok_or_else(|| format!("DNS lookup returned no addresses for {}", addr))?;
 
-	// SnapcastConnection::open doesn't return a Result which means its panic on error is hard to
-	// deal with. So instead of that, test the connection first.
-	tokio::net::TcpStream::connect(socket_addr)
+	let mut snapcast_client = SnapcastConnection::open(socket_addr)
 		.await
-		.map_err(|e| format!("Couldn't connect to {}:{}: {}", args.host, args.port, e))?;
+		.map_err(|e| format!("Couldn't connect to Snapcast server: {}", e))?;
 
-	let mut snapcast_client = SnapcastConnection::open(socket_addr).await;
-
-	snapcast_client.server_get_status().await.expect("Could not send request");
+	snapcast_client
+		.server_get_status()
+		.await
+		.map_err(|e| format!("Failed to send request for Snapcast status: {}", e))?;
 
 	// Set up terminal
 	let mut stdout = std::io::stdout();
