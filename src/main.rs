@@ -1,11 +1,10 @@
-use itertools::Itertools;
 use clap::Parser;
-use tabular::{Table, Row};
 use crossterm::{
     event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use futures::StreamExt;
+use itertools::Itertools;
 use owo_colors::OwoColorize;
 use ratatui::{
     Terminal,
@@ -21,6 +20,7 @@ use snapcast_control::{
 };
 use std::collections::HashMap;
 use supports_unicode::Stream;
+use tabular::{Row, Table};
 use tokio;
 
 fn get_binds_table() -> Table {
@@ -28,7 +28,11 @@ fn get_binds_table() -> Table {
         keys: String,
         description: String,
     }
-    let ellipsis = if supports_unicode::on(Stream::Stdout) { "…" } else { "..." };
+    let ellipsis = if supports_unicode::on(Stream::Stdout) {
+        "…"
+    } else {
+        "..."
+    };
     let binds = vec![
         Bind {
             keys: format!("{}/{}", "↑".bold(), "↓".bold()),
@@ -39,11 +43,30 @@ fn get_binds_table() -> Table {
             description: "adjust volume (with shift for larger increments)".to_string(),
         },
         Bind {
-            keys: format!("{}/{}/{}/{}", "h".bold(), "j".bold(), "k".bold(), "l".bold()),
-            description: format!("same as {}/{}/{}/{}", "h".bold(), "j".bold(), "k".bold(), "l".bold()),
+            keys: format!(
+                "{}/{}/{}/{}",
+                "h".bold(),
+                "j".bold(),
+                "k".bold(),
+                "l".bold()
+            ),
+            description: format!(
+                "same as {}/{}/{}/{}",
+                "h".bold(),
+                "j".bold(),
+                "k".bold(),
+                "l".bold()
+            ),
         },
         Bind {
-            keys: format!("{}/{}/{}/{}/{}", "1".bold(), "2".bold(), ellipsis, "9".bold(), "0".bold()),
+            keys: format!(
+                "{}/{}/{}/{}/{}",
+                "1".bold(),
+                "2".bold(),
+                ellipsis,
+                "9".bold(),
+                "0".bold()
+            ),
             description: format!("snap volume to 10%, 20%, {}, 90%, 100%", ellipsis),
         },
         Bind {
@@ -57,9 +80,10 @@ fn get_binds_table() -> Table {
     ];
     let mut table = Table::new("{:<}  {:<}");
     for entry in binds.iter() {
-        table.add_row(Row::new()
-            .with_ansi_cell(&entry.keys)
-            .with_ansi_cell(&entry.description)
+        table.add_row(
+            Row::new()
+                .with_ansi_cell(&entry.keys)
+                .with_ansi_cell(&entry.description),
         );
     }
     return table;
