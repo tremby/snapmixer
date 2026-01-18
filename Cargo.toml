@@ -7,12 +7,15 @@ license = "MIT"
 edition = "2024"
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "cargo"] }
 color-eyre = "0.6.5"
 crossterm = { version = "0.29.0", features = ["event-stream"] }
 futures = "0.3.31"
+itertools = "0.14.0"
+owo-colors = "4.2.3"
 ratatui = "0.30.0"
 snapcast-control = { git = "https://github.com/tremby/snapcast-control", branch = "handle-batches", version = "0.1.0" }
 supports-unicode = "3.0.0"
+tabular = { version = "0.2.0", features = ["ansi-cell"] }
 tokio = { version = "1.49.0", features = ["full"] }
 tokio-util = "0.7.18"

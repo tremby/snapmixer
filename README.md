@@ -9,20 +9,26 @@ It is not yet properly packaged for release.
 Usage
 -----
 
-`snapmixer [--host <HOSTNAME>] [--port <PORT>]`
+```
+snapmixer [--help] [--host|-h <HOSTNAME>] [--port|-h <PORT>] [--version|-v]
+```
 
-- `j` and `k` or cursors go up and down between clients and groups.
-- `J` and `K` or shift-cursors go up and down between groups.
-- `h` and `l` or cursors adjust volume in small increments.
-- `H` and `L` or shift-cursors adjust volume in larger increments.
-- `1` through `0` snap volume to 10%, 20%, ..., 90%, 100%.
-- `m` toggles mute.
-- `q` or `Esc` or `^C` quit.
+### Keys
 
-If a group has focus and volumes are adjusted, the loudest client of that group
-is adjusted to the target (whether a fixed number or an increment, depending on
-the command) and the other clients in the group are adjusted in proportion to
-their relative volumes.
+- `↑`/`↓`: navigate up and down (with shift to jump to groups)
+- `←`/`→`: adjust volume (with shift for larger increments)
+- `h`/`j`/`k`/`l`: same as `←`/`↓`/`↑`/`→`
+- `1`/`2`/…/`9`/`0`: snap volume to 10%, 20%, … 90%, 100%
+- `m`: toggle mute
+- `q`/`Esc`/`^C`: quit
+
+### Operation
+
+If a group has focus and volumes are adjusted,
+the loudest client of that group is adjusted to the target
+(whether a fixed number or an increment, depending on the command)
+and the other clients in the group
+are adjusted in proportion to their relative volumes.
 
 Todo
 ----

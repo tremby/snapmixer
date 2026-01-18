@@ -1,9 +1,12 @@
+use itertools::Itertools;
 use clap::Parser;
+use tabular::{Table, Row};
 use crossterm::{
     event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use futures::StreamExt;
+use owo_colors::OwoColorize;
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -20,10 +23,59 @@ use std::collections::HashMap;
 use supports_unicode::Stream;
 use tokio;
 
+fn get_binds_table() -> Table {
+    struct Bind {
+        keys: String,
+        description: String,
+    }
+    let ellipsis = if supports_unicode::on(Stream::Stdout) { "…" } else { "..." };
+    let binds = vec![
+        Bind {
+            keys: format!("{}/{}", "↑".bold(), "↓".bold()),
+            description: "navigate up and down (with shift to jump to groups)".to_string(),
+        },
+        Bind {
+            keys: format!("{}/{}", "←".bold(), "→".bold()),
+            description: "adjust volume (with shift for larger increments)".to_string(),
+        },
+        Bind {
+            keys: format!("{}/{}/{}/{}", "h".bold(), "j".bold(), "k".bold(), "l".bold()),
+            description: format!("same as {}/{}/{}/{}", "h".bold(), "j".bold(), "k".bold(), "l".bold()),
+        },
+        Bind {
+            keys: format!("{}/{}/{}/{}/{}", "1".bold(), "2".bold(), ellipsis, "9".bold(), "0".bold()),
+            description: format!("snap volume to 10%, 20%, {}, 90%, 100%", ellipsis),
+        },
+        Bind {
+            keys: "m".bold().to_string(),
+            description: "toggle mute".to_string(),
+        },
+        Bind {
+            keys: format!("{}/{}/{}", "q".bold(), "Esc".bold(), "^C".bold()),
+            description: "quit".to_string(),
+        },
+    ];
+    let mut table = Table::new("{:<}  {:<}");
+    for entry in binds.iter() {
+        table.add_row(Row::new()
+            .with_ansi_cell(&entry.keys)
+            .with_ansi_cell(&entry.description)
+        );
+    }
+    return table;
+}
+
 #[derive(Parser)]
-#[command(name = "snapmixer")]
-#[command(about = "Text-mode volume mixer for Snapcast")]
-#[command(disable_help_flag = true)]
+#[command(
+    name = "snapmixer",
+    version,
+    about,
+    author,
+    disable_help_flag = true,
+    after_help = std::iter::once("Keys:".bold().underline().to_string())
+        .chain(get_binds_table().to_string().lines().map(|l| format!("  {}", l)))
+        .join("\n"),
+)]
 struct Args {
     #[arg(
         short,
