@@ -15,7 +15,7 @@ use ratatui::{
 	widgets::{Block, Clear, Gauge, Padding, Paragraph, Wrap},
 };
 use snapcast_control::{
-	SnapcastConnection, State as SnapcastState, client::Client as SnapcastClient,
+	SnapcastConnection, ConnectionStatus, State as SnapcastState, client::Client as SnapcastClient,
 	client::ClientVolume,
 };
 use std::collections::HashMap;
@@ -98,11 +98,19 @@ struct AppState {
 	focus: Option<String>,
 	fractional_volumes: HashMap<String, f64>, // client_id -> fractional volume
 	error_messages: Vec<String>,
+	connected: bool,
+	reconnect_attempts: u32,
 }
 
 impl AppState {
 	fn new() -> Self {
-		Self { focus: None, fractional_volumes: HashMap::new(), error_messages: Vec::new() }
+		Self {
+			focus: None,
+			fractional_volumes: HashMap::new(),
+			error_messages: Vec::new(),
+			connected: false,
+			reconnect_attempts: 0,
+		}
 	}
 
 	fn update_fractional_volumes(&mut self, snapcast_state: &SnapcastState) {
@@ -172,6 +180,8 @@ fn move_focus(
 			focus: new_focus,
 			fractional_volumes: app_state.fractional_volumes.clone(),
 			error_messages: app_state.error_messages.clone(),
+			connected: app_state.connected,
+			reconnect_attempts: app_state.reconnect_attempts,
 		});
 	}
 	return None;
@@ -244,6 +254,8 @@ fn move_focus_group(
 			focus: new_focus,
 			fractional_volumes: app_state.fractional_volumes.clone(),
 			error_messages: app_state.error_messages.clone(),
+			connected: app_state.connected,
+			reconnect_attempts: app_state.reconnect_attempts,
 		});
 	}
 	return None;
@@ -382,14 +394,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		.next()
 		.ok_or_else(|| format!("DNS lookup returned no addresses for {}", addr))?;
 
-	let mut snapcast_client = SnapcastConnection::open(socket_addr)
+	let (status_tx, mut status_rx) = tokio::sync::mpsc::unbounded_channel();
+
+	let mut snapcast_client = SnapcastConnection::builder()
+		.on_status_change({
+			let tx = status_tx.clone();
+			move |status| {
+				let _ = tx.send(status);
+			}
+		})
+		.connect(socket_addr)
 		.await
 		.map_err(|e| format!("Couldn't connect to Snapcast server: {}", e))?;
-
-	snapcast_client
-		.server_get_status()
-		.await
-		.map_err(|e| format!("Failed to send request for Snapcast status: {}", e))?;
 
 	// Set up terminal
 	let mut stdout = std::io::stdout();
@@ -407,6 +423,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let mut needs_redraw = false;
 
 		tokio::select! {
+			Some(status) = status_rx.recv() => {
+				match status {
+					ConnectionStatus::Connected => {
+						app_state.connected = true;
+						app_state.reconnect_attempts = 0;
+						let _ = snapcast_client.server_get_status().await;
+						needs_redraw = true;
+					}
+					ConnectionStatus::Disconnected => {
+						app_state.connected = false;
+						app_state.reconnect_attempts = 1;
+						needs_redraw = true;
+					}
+					ConnectionStatus::ReconnectFailed => {
+						app_state.reconnect_attempts += 1;
+						needs_redraw = true;
+					}
+				}
+			}
+
 			Some(messages) = snapcast_client.recv() => {
 				for message in messages {
 					match message {
@@ -565,7 +601,13 @@ fn handle_key(key: KeyEvent, app_state: &AppState) -> Action {
 		return Action::None;
 	}
 
-	if !app_state.error_messages.is_empty() {
+	if !app_state.connected {
+		match key.code {
+			KeyCode::Char('q') => Action::Exit,
+			KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Exit,
+			_ => Action::None,
+		}
+	} else if !app_state.error_messages.is_empty() {
 		match key.code {
 			KeyCode::Esc => Action::Dismiss,
 			_ => Action::None,
@@ -769,7 +811,27 @@ fn draw_ui(
 				}
 			}
 
-			if !app_state.error_messages.is_empty() {
+			if !app_state.connected {
+				let status_area =
+					frame.area().centered(Constraint::Percentage(80), Constraint::Percentage(50));
+				frame.render_widget(Clear, status_area);
+				let status_block = Block::bordered()
+					.border_style(Style::default().fg(Color::Yellow))
+					.border_type(ratatui::widgets::BorderType::Rounded)
+					.padding(Padding::new(1, 1, 0, 0))
+					.title(Span::styled(
+						" Connection Status ",
+						Style::default().fg(Color::Reset).add_modifier(Modifier::BOLD),
+					));
+				frame.render_widget(&status_block, status_area);
+				let status_block_inner = status_block.inner(status_area);
+				let message = format!(
+					"Disconnected. Attempting to reconnect...\nReconnection attempt: {}",
+					app_state.reconnect_attempts
+				);
+				let paragraph = Paragraph::new(message).wrap(Wrap { trim: false });
+				frame.render_widget(paragraph, status_block_inner);
+			} else if !app_state.error_messages.is_empty() {
 				let error_area =
 					frame.area().centered(Constraint::Percentage(80), Constraint::Percentage(50));
 				frame.render_widget(Clear, error_area);
