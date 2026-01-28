@@ -1,6 +1,6 @@
 [package]
 name = "snapmixer"
-version = "2.3.3"
+version = "2.4.0"
 description = "Text-mode volume mixer for Snapcast"
 authors = ["Bart Nagel <bart@tremby.net>"]
 license = "MIT"
