@@ -390,8 +390,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	// Set up tracing
 	tracing_subscriber::fmt()
 		.with_env_filter(
-			EnvFilter::try_from_default_env()
-				.unwrap_or_else(|_| EnvFilter::new("off"))
+			EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("off")),
 		)
 		.with_writer(std::io::stderr)
 		.init();
@@ -688,10 +687,10 @@ fn handle_key(key: KeyEvent, app_state: &AppState) -> Action {
 
 fn get_client_name(client: &SnapcastClient) -> String {
 	if client.config.name.is_empty() {
-		if !client.host.name.is_empty() {
-			return format!("Client on host {}", client.host.name);
+		if client.host.name.is_empty() {
+			return format!("Client with ID {}", client.id);
 		}
-		return format!("Client with ID {}", client.id);
+		return format!("Client on host {}", client.host.name);
 	}
 	return client.config.name.clone();
 }
