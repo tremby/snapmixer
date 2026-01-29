@@ -15,8 +15,8 @@ use ratatui::{
 	widgets::{Block, Clear, Gauge, Padding, Paragraph, Wrap},
 };
 use snapcast_control::{
-	SnapcastConnection, ConnectionStatus, State as SnapcastState, client::Client as SnapcastClient,
-	client::ClientVolume,
+	ConnectionStatus, SnapcastConnection, State as SnapcastState, StateGroup as SnapcastGroup,
+	client::Client as SnapcastClient, client::ClientVolume,
 };
 use std::collections::HashMap;
 use supports_unicode::Stream;
@@ -685,6 +685,13 @@ fn handle_key(key: KeyEvent, app_state: &AppState) -> Action {
 	}
 }
 
+fn get_group_name(group: &SnapcastGroup) -> String {
+	if group.name.is_empty() {
+		return format!("Group with ID {}", group.id);
+	}
+	return group.name.clone();
+}
+
 fn get_client_name(client: &SnapcastClient) -> String {
 	if client.config.name.is_empty() {
 		if client.host.name.is_empty() {
@@ -732,16 +739,7 @@ fn draw_ui(
 			let longest_client_name_length = get_longest_client_name_length(&snapcast_state);
 
 			// Render each group
-			for (index, entry) in snapcast_state.groups.iter().enumerate() {
-				let (group_id, group) = (entry.key(), entry.value());
-
-				// Decide on group display name
-				let group_name = if group.name.is_empty() {
-					format!("Group with ID {}", group_id)
-				} else {
-					group.name.clone()
-				};
-
+			for (index, group) in snapcast_state.groups.iter().enumerate() {
 				// Put together full title
 				let title_style = if app_state.focus.as_deref() == Some(&group.id) {
 					Style::default()
@@ -751,7 +749,7 @@ fn draw_ui(
 				let block_title = Line::from(vec![
 					get_volume_symbol(group.muted),
 					Span::raw(" "),
-					Span::styled(group_name, title_style.add_modifier(Modifier::BOLD)),
+					Span::styled(get_group_name(&group), title_style.add_modifier(Modifier::BOLD)),
 					Span::raw(" "),
 				]);
 
