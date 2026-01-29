@@ -727,10 +727,21 @@ fn draw_ui(
 ) {
 	terminal
 		.draw(|frame| {
+			// Sort groups by name
+			let groups = {
+				let mut groups: Vec<_> = snapcast_state.groups.iter().collect();
+				groups.sort_by(|a, b| {
+					let name_a = get_group_name(a);
+					let name_b = get_group_name(b);
+					name_a.cmp(&name_b)
+				});
+				groups
+			};
+
 			// Set up main layout and reserve space for each group
 			let groups_layout = Layout::default()
 				.direction(Direction::Vertical)
-				.constraints(snapcast_state.groups.iter().map(|group| {
+				.constraints(groups.iter().map(|group| {
 					let len = group.value().clients.len() as u16;
 					Constraint::Length(len + 2) // +2 for top/bottom borders
 				}))
@@ -739,7 +750,7 @@ fn draw_ui(
 			let longest_client_name_length = get_longest_client_name_length(&snapcast_state);
 
 			// Render each group
-			for (index, group) in snapcast_state.groups.iter().enumerate() {
+			for (index, group) in groups.iter().enumerate() {
 				// Put together full title
 				let title_style = if app_state.focus.as_deref() == Some(&group.id) {
 					Style::default()
@@ -749,7 +760,7 @@ fn draw_ui(
 				let block_title = Line::from(vec![
 					get_volume_symbol(group.muted),
 					Span::raw(" "),
-					Span::styled(get_group_name(&group), title_style.add_modifier(Modifier::BOLD)),
+					Span::styled(get_group_name(group), title_style.add_modifier(Modifier::BOLD)),
 					Span::raw(" "),
 				]);
 
@@ -767,16 +778,27 @@ fn draw_ui(
 					.title(block_title);
 				frame.render_widget(&block, groups_layout[index]);
 
+				// Sort clients by name
+				let clients = {
+					let mut clients: Vec<_> = group
+						.clients
+						.iter()
+						.filter_map(|id| snapcast_state.clients.get(id))
+						.collect();
+					clients.sort_by(|a, b| {
+						let name_a = get_client_name(a);
+						let name_b = get_client_name(b);
+						name_a.cmp(&name_b)
+					});
+					clients
+				};
+
 				// Render each client
 				let block_inner = block.inner(groups_layout[index]);
-				let client_constraints = vec![Constraint::Length(1); group.clients.len()];
+				let client_constraints = vec![Constraint::Length(1); clients.len()];
 				let client_rows = Layout::vertical(client_constraints).split(block_inner);
-				for (index, client_id) in group.clients.iter().enumerate() {
+				for (index, client) in clients.iter().enumerate() {
 					let client_row = client_rows[index];
-					let client = match snapcast_state.clients.get(client_id) {
-						Some(c) => c,
-						None => continue,
-					};
 
 					// Styled name
 					let client_name = get_client_name(&client);
