@@ -33,8 +33,8 @@ For debug logging, [set the `RUST_LOG` environment variable][logging-docs].
 
 Examples:
 
-- For maximim logging, `RUST_LOG=trace`.
-- For info-level messages specific to Snapmixer, `RUST_LOG=snapmixer=info`.
+- For maximum logging, `RUST_LOG=trace`.
+- For debug-level messages specific to Snapmixer, `RUST_LOG=snapmixer=debug`.
 
 Logging is to stderr, so it'll mess up the TUI display unless you redirect it.
 For example, in one terminal run
