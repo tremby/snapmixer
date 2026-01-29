@@ -744,6 +744,35 @@ fn sort_clients(group: &SnapcastGroup, snapcast_state: &SnapcastState) -> Vec<Sn
 	return clients;
 }
 
+fn render_modal(
+	frame: &mut ratatui::Frame,
+	title: &str,
+	message: &str,
+	border_color: Color,
+	subtitle: Option<&str>,
+) {
+	let area = frame.area().centered(Constraint::Percentage(80), Constraint::Percentage(50));
+	frame.render_widget(Clear, area);
+
+	let mut block = Block::bordered()
+		.border_style(Style::default().fg(border_color))
+		.border_type(ratatui::widgets::BorderType::Rounded)
+		.padding(Padding::new(1, 1, 0, 0))
+		.title(Span::styled(
+			format!(" {} ", title),
+			Style::default().fg(Color::Reset).add_modifier(Modifier::BOLD),
+		));
+
+	if let Some(subtitle) = subtitle {
+		block = block.title(Line::from(format!(" {} ", subtitle)).right_aligned());
+	}
+
+	frame.render_widget(&block, area);
+	let inner = block.inner(area);
+	let paragraph = Paragraph::new(message).wrap(Wrap { trim: false });
+	frame.render_widget(paragraph, inner);
+}
+
 fn draw_ui(
 	terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
 	app_state: &AppState,
@@ -850,44 +879,25 @@ fn draw_ui(
 				}
 			}
 
-			if !app_state.connected {
-				let status_area =
-					frame.area().centered(Constraint::Percentage(80), Constraint::Percentage(50));
-				frame.render_widget(Clear, status_area);
-				let status_block = Block::bordered()
-					.border_style(Style::default().fg(Color::Yellow))
-					.border_type(ratatui::widgets::BorderType::Rounded)
-					.padding(Padding::new(1, 1, 0, 0))
-					.title(Span::styled(
-						" Connection Status ",
-						Style::default().fg(Color::Reset).add_modifier(Modifier::BOLD),
-					));
-				frame.render_widget(&status_block, status_area);
-				let status_block_inner = status_block.inner(status_area);
-				let message = format!(
-					"Disconnected. Attempting to reconnect...\nReconnection attempt: {}",
-					app_state.reconnect_attempts
+			if !app_state.error_messages.is_empty() {
+				render_modal(
+					frame,
+					"Error",
+					&app_state.error_messages.join("\n"),
+					Color::Red,
+					Some("esc to dismiss"),
 				);
-				let paragraph = Paragraph::new(message).wrap(Wrap { trim: false });
-				frame.render_widget(paragraph, status_block_inner);
-			} else if !app_state.error_messages.is_empty() {
-				let error_area =
-					frame.area().centered(Constraint::Percentage(80), Constraint::Percentage(50));
-				frame.render_widget(Clear, error_area);
-				let error_block = Block::bordered()
-					.border_style(Style::default().fg(Color::Red))
-					.border_type(ratatui::widgets::BorderType::Rounded)
-					.padding(Padding::new(1, 1, 0, 0))
-					.title(Span::styled(
-						" Error ",
-						Style::default().fg(Color::Reset).add_modifier(Modifier::BOLD),
-					))
-					.title(Line::from(" esc to dismiss ").right_aligned());
-				frame.render_widget(&error_block, error_area);
-				let error_block_inner = error_block.inner(error_area);
-				let paragraph =
-					Paragraph::new(app_state.error_messages.join("\n")).wrap(Wrap { trim: false });
-				frame.render_widget(paragraph, error_block_inner);
+			} else if !app_state.connected {
+				render_modal(
+					frame,
+					"Connection status",
+					&format!(
+						"Disconnected. Attempting to reconnect...\nReconnection attempt: {}",
+						app_state.reconnect_attempts
+					),
+					Color::Yellow,
+					None,
+				);
 			}
 		})
 		.unwrap();
