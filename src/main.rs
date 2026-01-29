@@ -130,10 +130,10 @@ impl AppState {
 
 fn get_all_focusable_ids(snapcast_state: &SnapcastState) -> Vec<String> {
 	let mut ids = Vec::new();
-	for entry in snapcast_state.groups.iter() {
-		ids.push(entry.key().clone());
-		for client_id in &entry.value().clients {
-			ids.push(client_id.clone());
+	for group in sort_groups(snapcast_state).iter() {
+		ids.push(group.id.clone());
+		for client in sort_clients(group, snapcast_state) {
+			ids.push(client.id.clone());
 		}
 	}
 	return ids;
@@ -184,16 +184,16 @@ fn move_focus(
 			error_messages: app_state.error_messages.clone(),
 			connected: app_state.connected,
 			reconnect_attempts: app_state.reconnect_attempts,
+			connection_stale: app_state.connection_stale,
 		});
 	}
 	return None;
 }
 
 fn get_group_id_of_client(client_id: String, snapcast_state: &SnapcastState) -> Option<String> {
-	return snapcast_state.groups.iter().find_map(|entry| {
-		let (group_id, group) = entry.pair();
+	return sort_groups(snapcast_state).iter().find_map(|group| {
 		if group.clients.contains(&client_id) {
-			return Some(group_id.clone());
+			return Some(group.id.clone());
 		}
 		return None;
 	});
@@ -205,7 +205,7 @@ fn move_focus_group(
 	snapcast_state: &SnapcastState,
 ) -> Option<AppState> {
 	let focusable_ids: Vec<String> =
-		snapcast_state.groups.iter().map(|entry| entry.key().clone()).collect();
+		sort_groups(snapcast_state).iter().map(|group| group.id.clone()).collect();
 
 	let fallback = {
 		let current_index = if delta > 0 { -1 } else { focusable_ids.len() as i16 };
@@ -720,6 +720,30 @@ fn get_volume_symbol(muted: bool) -> Span<'static> {
 	);
 }
 
+fn sort_groups(snapcast_state: &SnapcastState) -> Vec<SnapcastGroup> {
+	let mut groups: Vec<_> = snapcast_state.groups.iter().map(|g| g.clone()).collect();
+	groups.sort_by(|a, b| {
+		let name_a = get_group_name(a);
+		let name_b = get_group_name(b);
+		name_a.cmp(&name_b)
+	});
+	return groups;
+}
+
+fn sort_clients(group: &SnapcastGroup, snapcast_state: &SnapcastState) -> Vec<SnapcastClient> {
+	let mut clients: Vec<_> = group
+		.clients
+		.iter()
+		.filter_map(|id| snapcast_state.clients.get(id).map(|c| c.clone()))
+		.collect();
+	clients.sort_by(|a, b| {
+		let name_a = get_client_name(a);
+		let name_b = get_client_name(b);
+		name_a.cmp(&name_b)
+	});
+	return clients;
+}
+
 fn draw_ui(
 	terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
 	app_state: &AppState,
@@ -727,22 +751,13 @@ fn draw_ui(
 ) {
 	terminal
 		.draw(|frame| {
-			// Sort groups by name
-			let groups = {
-				let mut groups: Vec<_> = snapcast_state.groups.iter().collect();
-				groups.sort_by(|a, b| {
-					let name_a = get_group_name(a);
-					let name_b = get_group_name(b);
-					name_a.cmp(&name_b)
-				});
-				groups
-			};
+			let groups = sort_groups(snapcast_state);
 
 			// Set up main layout and reserve space for each group
 			let groups_layout = Layout::default()
 				.direction(Direction::Vertical)
 				.constraints(groups.iter().map(|group| {
-					let len = group.value().clients.len() as u16;
+					let len = group.clients.len() as u16;
 					Constraint::Length(len + 2) // +2 for top/bottom borders
 				}))
 				.split(frame.area());
@@ -779,19 +794,7 @@ fn draw_ui(
 				frame.render_widget(&block, groups_layout[index]);
 
 				// Sort clients by name
-				let clients = {
-					let mut clients: Vec<_> = group
-						.clients
-						.iter()
-						.filter_map(|id| snapcast_state.clients.get(id))
-						.collect();
-					clients.sort_by(|a, b| {
-						let name_a = get_client_name(a);
-						let name_b = get_client_name(b);
-						name_a.cmp(&name_b)
-					});
-					clients
-				};
+				let clients = sort_clients(group, snapcast_state);
 
 				// Render each client
 				let block_inner = block.inner(groups_layout[index]);
