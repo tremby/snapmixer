@@ -19,11 +19,18 @@ use snapcast_control::{
 	client::Client as SnapcastClient, client::ClientVolume,
 };
 use std::collections::HashMap;
+use std::pin::Pin;
+use std::time::SystemTime;
 use supports_unicode::Stream;
 use tabular::{Row, Table};
-use tokio;
+use tokio::time::{Duration, Sleep};
 use tracing;
 use tracing_subscriber::EnvFilter;
+
+const EXPECTED_RESPONSE_TIME: Duration = Duration::from_millis(200);
+const SUSPICIOUS_QUIET_TIME: Duration = Duration::from_mins(5);
+const SUSPEND_MONITOR_TIME: Duration = Duration::from_secs(1);
+const SUSPEND_THRESHOLD_TIME: Duration = Duration::from_secs(10);
 
 fn get_binds_table() -> Table {
 	struct Bind {
@@ -102,6 +109,7 @@ struct AppState {
 	error_messages: Vec<String>,
 	connected: bool,
 	reconnect_attempts: u32,
+	connection_stale: bool,
 }
 
 impl AppState {
@@ -112,6 +120,7 @@ impl AppState {
 			error_messages: Vec::new(),
 			connected: false,
 			reconnect_attempts: 0,
+			connection_stale: false,
 		}
 	}
 
@@ -258,6 +267,7 @@ fn move_focus_group(
 			error_messages: app_state.error_messages.clone(),
 			connected: app_state.connected,
 			reconnect_attempts: app_state.reconnect_attempts,
+			connection_stale: app_state.connection_stale,
 		});
 	}
 	return None;
@@ -432,10 +442,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let snapcast_state = snapcast_client.state.clone();
 	let mut app_state = AppState::new();
 
+	// Set up timers for connection and suspension monitoring
+	let mut no_receive_timeout: Option<Pin<Box<Sleep>>> =
+		Some(Box::pin(tokio::time::sleep(SUSPICIOUS_QUIET_TIME)));
+	let mut no_response_timeout: Option<Pin<Box<Sleep>>> = None;
+	let mut last_wall_time = SystemTime::now();
+	let mut suspend_monitor_interval = tokio::time::interval(SUSPEND_MONITOR_TIME);
+
 	loop {
 		let mut needs_redraw = false;
+		let mut sent = false;
+		let mut received = false;
 
 		tokio::select! {
+			_ = suspend_monitor_interval.tick() => {
+				let wall_time = SystemTime::now();
+				if let Ok(delta) = wall_time.duration_since(last_wall_time) {
+					if delta >= SUSPEND_THRESHOLD_TIME {
+						tracing::debug!("Possible system suspend/resume detected: expected ~1 sec to have passed; in fact {:?} secs have passed", delta);
+						let _ = snapcast_client.server_get_status().await;
+						sent = true;
+					}
+				}
+				last_wall_time = wall_time;
+			}
+
+			_ = async {
+				if let Some(timer) = &mut no_receive_timeout {
+					timer.as_mut().await;
+				}
+			}, if no_receive_timeout.is_some() && app_state.connected && !app_state.connection_stale => {
+				tracing::debug!("No messages received for a while; requesting status");
+				no_receive_timeout = None;
+				let _ = snapcast_client.server_get_status().await;
+				sent = true;
+			}
+
+			_ = async {
+				if let Some(timer) = &mut no_response_timeout {
+					timer.as_mut().await;
+				}
+			}, if no_response_timeout.is_some() && app_state.connected && !app_state.connection_stale => {
+				tracing::debug!("No response; marking connection stale");
+				app_state.connection_stale = true;
+				needs_redraw = true;
+			}
+
 			Some(status) = status_rx.recv() => {
 				tracing::debug!("Connection status changed to {:?}", status);
 				match status {
@@ -459,6 +511,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 			Some(messages) = snapcast_client.recv() => {
 				tracing::debug!("Received {} messages from Snapcast server", messages.len());
+				received = true;
+				if app_state.connection_stale {
+					app_state.connection_stale = false;
+					needs_redraw = true;
+				}
 				for message in messages {
 					match message {
 						Ok(_) => {
@@ -474,7 +531,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			},
 
 			maybe_event = input.next() => {
-				tracing::debug!("Received keyboard event");
+				tracing::trace!("Received keyboard event");
 				if let Some(Ok(event)) = maybe_event {
 					match event {
 						Event::Key(key) => match handle_key(key, &app_state) {
@@ -514,55 +571,71 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 							},
 							Action::ReduceVolume => {
 								let _ = set_volume_delta(-1.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+								sent = true;
 							},
 							Action::ReduceVolumeMore => {
 								let _ = set_volume_delta(-5.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+								sent = true;
 							},
 							Action::RaiseVolume => {
 								let _ = set_volume_delta(1.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+								sent = true;
 							},
 							Action::RaiseVolumeMore => {
 								let _ = set_volume_delta(5.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+								sent = true;
 							},
 							Action::SetVolumeTo10 => {
 								let _ = set_volume(10.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+								sent = true;
 							},
 							Action::SetVolumeTo20 => {
 								let _ = set_volume(20.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+								sent = true;
 							},
 							Action::SetVolumeTo30 => {
 								let _ = set_volume(30.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+								sent = true;
 							},
 							Action::SetVolumeTo40 => {
 								let _ = set_volume(40.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+								sent = true;
 							},
 							Action::SetVolumeTo50 => {
 								let _ = set_volume(50.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+								sent = true;
 							},
 							Action::SetVolumeTo60 => {
 								let _ = set_volume(60.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+								sent = true;
 							},
 							Action::SetVolumeTo70 => {
 								let _ = set_volume(70.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+								sent = true;
 							},
 							Action::SetVolumeTo80 => {
 								let _ = set_volume(80.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+								sent = true;
 							},
 							Action::SetVolumeTo90 => {
 								let _ = set_volume(90.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+								sent = true;
 							},
 							Action::SetVolumeTo100 => {
 								let _ = set_volume(100.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
+								sent = true;
 							},
 							Action::ToggleMute => {
 								if let Some(id) = app_state.focus.as_ref() {
 									if let Some(group) = snapcast_state.groups.get(id) {
 										let _ = snapcast_client.group_set_mute(group.id.to_string(), !group.muted).await;
+										sent = true;
 									} else if let Some(client) = snapcast_state.clients.get(id) {
 										let _ = snapcast_client.client_set_volume(client.id.to_string(), ClientVolume {
 											muted: !client.config.volume.muted,
 											..client.config.volume
 										}).await;
+										sent = true;
 									}
 								}
 							},
@@ -574,6 +647,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 				}
 			}
 		}
+
+		if received {
+			tracing::trace!("Resetting received timer, cancelling response timer");
+			no_receive_timeout = Some(Box::pin(tokio::time::sleep(SUSPICIOUS_QUIET_TIME)));
+			no_response_timeout = None;
+		};
+
+		if sent {
+			tracing::trace!("Resetting response timer");
+			no_response_timeout = Some(Box::pin(tokio::time::sleep(EXPECTED_RESPONSE_TIME)));
+		};
 
 		if needs_redraw {
 			draw_ui(&mut terminal, &app_state, &snapcast_state);
@@ -617,7 +701,7 @@ fn handle_key(key: KeyEvent, app_state: &AppState) -> Action {
 		return Action::None;
 	}
 
-	if !app_state.connected {
+	if !app_state.connected || app_state.connection_stale {
 		match key.code {
 			KeyCode::Char('q') => Action::Exit,
 			KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Exit,
@@ -895,6 +979,14 @@ fn draw_ui(
 						"Disconnected. Attempting to reconnect...\nReconnection attempt: {}",
 						app_state.reconnect_attempts
 					),
+					Color::Yellow,
+					None,
+				);
+			} else if app_state.connection_stale {
+				render_modal(
+					frame,
+					"Connection status",
+					"Connection appears to be stale. Awaiting response...",
 					Color::Yellow,
 					None,
 				);
