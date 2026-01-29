@@ -19,3 +19,5 @@ supports-unicode = "3.0.0"
 tabular = { version = "0.2.0", features = ["ansi-cell"] }
 tokio = { version = "1.49.0", features = ["full"] }
 tokio-util = "0.7.18"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }

@@ -1,8 +1,7 @@
 Snapmixer
 =========
 
-This is a text-mode volume mixer for
-[Snapcast](https://github.com/badaix/snapcast).
+This is a text-mode volume mixer for [Snapcast][snapcast].
 
 Usage
 -----
@@ -28,6 +27,20 @@ the loudest client of that group is adjusted to the target
 and the other clients in the group
 are adjusted in proportion to their relative volumes.
 
+### Logging
+
+For debug logging, [set the `RUST_LOG` environment variable][logging-docs].
+
+Examples:
+
+- For maximim logging, `RUST_LOG=trace`.
+- For info-level messages specific to Snapmixer, `RUST_LOG=snapmixer=info`.
+
+Logging is to stderr, so it'll mess up the TUI display unless you redirect it.
+For example, in one terminal run
+`RUST_LOG=snapmixer=debug snapmixer 2>/tmp/snapmixer.log`
+and in another run `tail -F /tmp/snapmixer.log`.
+
 Todo
 ----
 
@@ -41,3 +54,6 @@ Things I think would be neat, but which I have no motivation to implement:
 - Customizable colours? Patches welcome.
 - Customizable keybinds? Patches welcome.
 - Switching streams? Patches welcome.
+
+[snapcast]: https://github.com/badaix/snapcast
+[logging-docs]: https://docs.rs/env_logger/latest/env_logger/#enabling-logging

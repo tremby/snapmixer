@@ -22,6 +22,8 @@ use std::collections::HashMap;
 use supports_unicode::Stream;
 use tabular::{Row, Table};
 use tokio;
+use tracing;
+use tracing_subscriber::EnvFilter;
 
 fn get_binds_table() -> Table {
 	struct Bind {
@@ -385,9 +387,19 @@ async fn set_volume_delta(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+	// Set up tracing
+	tracing_subscriber::fmt()
+		.with_env_filter(
+			EnvFilter::try_from_default_env()
+				.unwrap_or_else(|_| EnvFilter::new("off"))
+		)
+		.with_writer(std::io::stderr)
+		.init();
+
 	let args = Args::parse();
 
 	let addr = format!("{}:{}", args.host, args.port);
+	tracing::debug!("Looking up {}", addr);
 	let socket_addr = tokio::net::lookup_host(&addr)
 		.await
 		.map_err(|e| format!("DNS lookup failed: {}", e))?
@@ -396,6 +408,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	let (status_tx, mut status_rx) = tokio::sync::mpsc::unbounded_channel();
 
+	tracing::debug!("Connecting to Snapcast server");
 	let mut snapcast_client = SnapcastConnection::builder()
 		.on_status_change({
 			let tx = status_tx.clone();
@@ -408,6 +421,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		.map_err(|e| format!("Couldn't connect to Snapcast server: {}", e))?;
 
 	// Set up terminal
+	tracing::debug!("Setting up terminal");
 	let mut stdout = std::io::stdout();
 	crossterm::execute!(stdout, EnterAlternateScreen)?;
 	let backend = CrosstermBackend::new(stdout);
@@ -424,6 +438,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 		tokio::select! {
 			Some(status) = status_rx.recv() => {
+				tracing::debug!("Connection status changed to {:?}", status);
 				match status {
 					ConnectionStatus::Connected => {
 						app_state.connected = true;
@@ -444,6 +459,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			}
 
 			Some(messages) = snapcast_client.recv() => {
+				tracing::debug!("Received {} messages from Snapcast server", messages.len());
 				for message in messages {
 					match message {
 						Ok(_) => {
@@ -459,6 +475,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			},
 
 			maybe_event = input.next() => {
+				tracing::debug!("Received keyboard event");
 				if let Some(Ok(event)) = maybe_event {
 					match event {
 						Event::Key(key) => match handle_key(key, &app_state) {
