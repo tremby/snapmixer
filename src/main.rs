@@ -18,6 +18,7 @@ use ratatui::{
 use snapcast_control::{
 	ConnectionStatus, SnapcastConnection, State as SnapcastState, StateGroup as SnapcastGroup,
 	client::Client as SnapcastClient, client::ClientVolume,
+	stream::Stream as SnapcastStream,
 };
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -70,6 +71,10 @@ fn get_binds_table() -> Table {
 			description: format!("snap volume to 10%, 20%, {}, 90%, 100%", ellipsis),
 		},
 		Bind { keys: "m".bold().to_string(), description: "toggle mute".to_string() },
+		Bind {
+			keys: format!("{}{}{}", "s".bold(), "/".bold(), "S".bold()),
+			description: "cycle stream forward/backward".to_string(),
+		},
 		Bind {
 			keys: format!("{}/{}/{}", "q".bold(), "Esc".bold(), "^C".bold()),
 			description: "quit".to_string(),
@@ -265,6 +270,58 @@ fn move_focus_group(
 		});
 	}
 	return None;
+}
+
+async fn cycle_stream(
+	delta: i16,
+	app_state: &AppState,
+	snapcast_state: &SnapcastState,
+	snapcast_client: &mut SnapcastConnection,
+) -> bool {
+	let id = match app_state.focus.as_ref() {
+		Some(id) => id,
+		None => return false,
+	};
+
+	// Find the group: either directly focused, or the parent group of a focused client
+	let group = if let Some(group) = snapcast_state.groups.get(id) {
+		group.clone()
+	} else if let Some(group_id) = get_group_id_of_client(id.to_string(), snapcast_state) {
+		match snapcast_state.groups.get(&group_id) {
+			Some(group) => group.clone(),
+			None => return false,
+		}
+	} else {
+		return false;
+	};
+
+	// Get sorted list of available stream IDs, sorted by name
+	let mut streams: Vec<(String, String)> = snapcast_state
+		.streams
+		.iter()
+		.map(|entry| {
+			let id = entry.key().clone();
+			let name = get_stream_name(&id, entry.value());
+			(id, name)
+		})
+		.collect();
+	streams.sort_by(|a, b| a.1.cmp(&b.1));
+	let stream_ids: Vec<String> = streams.into_iter().map(|(id, _)| id).collect();
+
+	if stream_ids.is_empty() {
+		return false;
+	}
+
+	// Find current stream index and cycle
+	let current_index = stream_ids.iter().position(|s| s == &group.stream_id).unwrap_or(0);
+	let new_index = (current_index as i16 + delta).rem_euclid(stream_ids.len() as i16) as usize;
+	let new_stream_id = &stream_ids[new_index];
+
+	if *new_stream_id != group.stream_id {
+		let _ = snapcast_client.group_set_stream(group.id.clone(), new_stream_id.clone()).await;
+		return true;
+	}
+	false
 }
 
 async fn set_volume(
@@ -738,6 +795,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 							Action::SetVolumeTo100 => {
 								sent = set_volume(100.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
 							},
+							Action::NextStream => {
+								sent = cycle_stream(1, &app_state, &snapcast_state, &mut snapcast_client).await;
+							},
+							Action::PrevStream => {
+								sent = cycle_stream(-1, &app_state, &snapcast_state, &mut snapcast_client).await;
+							},
 							Action::ToggleMute => {
 								if let Some(id) = app_state.focus.as_ref() {
 									if let Some(group) = snapcast_state.groups.get(id) {
@@ -806,6 +869,8 @@ enum Action {
 	SetVolumeTo90,
 	SetVolumeTo100,
 	ToggleMute,
+	NextStream,
+	PrevStream,
 	None,
 }
 
@@ -877,6 +942,10 @@ fn handle_key(key: KeyEvent, app_state: &AppState) -> Action {
 			// Mute
 			KeyCode::Char('m') => Action::ToggleMute,
 
+			// Cycle stream
+			KeyCode::Char('s') => Action::NextStream,
+			KeyCode::Char('S') => Action::PrevStream,
+
 			_ => Action::None,
 		}
 	}
@@ -897,6 +966,24 @@ fn get_client_name(client: &SnapcastClient) -> String {
 		return format!("Client on host {}", client.host.name);
 	}
 	return client.config.name.clone();
+}
+
+fn get_stream_name(stream_id: &str, stream: &Option<SnapcastStream>) -> String {
+	// Try to extract a friendly name from the URI path, otherwise use the stream ID
+	if let Some(s) = stream {
+		let path = &s.uri.path;
+		if !path.is_empty() && path != "/" {
+			// Extract the last component of the path without extension
+			if let Some(filename) = path.rsplit('/').next() {
+				if let Some(name_without_ext) = filename.rsplit('.').nth(1).or(Some(filename)) {
+					if !name_without_ext.is_empty() {
+						return name_without_ext.to_string();
+					}
+				}
+			}
+		}
+	}
+	return stream_id.to_string();
 }
 
 fn get_longest_client_name_length(snapcast_state: &SnapcastState) -> usize {
@@ -998,10 +1085,12 @@ fn draw_ui(
 				} else {
 					Style::default().fg(Color::Reset)
 				};
+				let stream_label = format!(" [{}]", group.stream_id);
 				let block_title = Line::from(vec![
 					get_volume_symbol(group.muted),
 					Span::raw(" "),
 					Span::styled(get_group_name(group), title_style.add_modifier(Modifier::BOLD)),
+					Span::styled(stream_label, Style::default().fg(Color::DarkGray)),
 					Span::raw(" "),
 				]);
 
