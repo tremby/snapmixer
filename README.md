@@ -20,6 +20,7 @@ and if it can't connect there, it'll attempt to find a Snapcast server via mDNS 
 - `h`/`j`/`k`/`l`: same as `←`/`↓`/`↑`/`→`
 - `1`/`2`/…/`9`/`0`: snap volume to 10%, 20%, … 90%, 100%
 - `m`: toggle mute
+- `s`/`S`: cycle stream forward/backward for the active group
 - `q`/`Esc`/`^C`: quit
 
 ### Operation
@@ -56,7 +57,6 @@ Things I think would be neat, but which I have no motivation to implement:
 
 - Customizable colours? Patches welcome.
 - Customizable keybinds? Patches welcome.
-- Switching streams? Patches welcome.
 
 [snapcast]: https://github.com/badaix/snapcast
 [logging-docs]: https://docs.rs/env_logger/latest/env_logger/#enabling-logging
