@@ -70,6 +70,10 @@ fn get_binds_table() -> Table {
 		},
 		Bind { keys: "m".bold().to_string(), description: "toggle mute".to_string() },
 		Bind {
+			keys: format!("{}/{}", "s".bold(), "S".bold()),
+			description: "cycle stream forward / backward (when group focused)".to_string(),
+		},
+		Bind {
 			keys: format!("{}/{}/{}", "q".bold(), "Esc".bold(), "^C".bold()),
 			description: "quit".to_string(),
 		},
@@ -271,6 +275,47 @@ fn move_focus_group(
 		});
 	}
 	return None;
+}
+
+async fn cycle_stream(
+	delta: i16,
+	app_state: &AppState,
+	snapcast_state: &SnapcastState,
+	snapcast_client: &mut SnapcastConnection,
+) {
+	let id = match app_state.focus.as_ref() {
+		Some(id) => id,
+		None => return,
+	};
+
+	// Find the group: either directly focused, or the parent group of a focused client
+	let group = if let Some(group) = snapcast_state.groups.get(id) {
+		group.clone()
+	} else if let Some(group_id) = get_group_id_of_client(id.to_string(), snapcast_state) {
+		match snapcast_state.groups.get(&group_id) {
+			Some(group) => group.clone(),
+			None => return,
+		}
+	} else {
+		return;
+	};
+
+	// Get sorted list of available stream IDs
+	let mut stream_ids: Vec<String> = snapcast_state.streams.iter().map(|s| s.key().clone()).collect();
+	stream_ids.sort();
+
+	if stream_ids.is_empty() {
+		return;
+	}
+
+	// Find current stream index and cycle
+	let current_index = stream_ids.iter().position(|s| s == &group.stream_id).unwrap_or(0);
+	let new_index = (current_index as i16 + delta).rem_euclid(stream_ids.len() as i16) as usize;
+	let new_stream_id = &stream_ids[new_index];
+
+	if *new_stream_id != group.stream_id {
+		let _ = snapcast_client.group_set_stream(group.id.clone(), new_stream_id.clone()).await;
+	}
 }
 
 async fn set_volume(
@@ -625,6 +670,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 								let _ = set_volume(100.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
 								sent = true;
 							},
+							Action::NextStream => {
+								cycle_stream(1, &app_state, &snapcast_state, &mut snapcast_client).await;
+								sent = true;
+							},
+							Action::PrevStream => {
+								cycle_stream(-1, &app_state, &snapcast_state, &mut snapcast_client).await;
+								sent = true;
+							},
 							Action::ToggleMute => {
 								if let Some(id) = app_state.focus.as_ref() {
 									if let Some(group) = snapcast_state.groups.get(id) {
@@ -693,6 +746,8 @@ enum Action {
 	SetVolumeTo90,
 	SetVolumeTo100,
 	ToggleMute,
+	NextStream,
+	PrevStream,
 	None,
 }
 
@@ -763,6 +818,10 @@ fn handle_key(key: KeyEvent, app_state: &AppState) -> Action {
 
 			// Mute
 			KeyCode::Char('m') => Action::ToggleMute,
+
+			// Cycle stream
+			KeyCode::Char('s') => Action::NextStream,
+			KeyCode::Char('S') => Action::PrevStream,
 
 			_ => Action::None,
 		}
@@ -885,10 +944,12 @@ fn draw_ui(
 				} else {
 					Style::default().fg(Color::Reset)
 				};
+				let stream_label = format!(" [{}]", group.stream_id);
 				let block_title = Line::from(vec![
 					get_volume_symbol(group.muted),
 					Span::raw(" "),
 					Span::styled(get_group_name(group), title_style.add_modifier(Modifier::BOLD)),
+					Span::styled(stream_label, Style::default().fg(Color::DarkGray)),
 					Span::raw(" "),
 				]);
 
