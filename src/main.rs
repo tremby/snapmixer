@@ -278,12 +278,13 @@ async fn set_volume(
 	app_state: &mut AppState,
 	snapcast_state: &SnapcastState,
 	snapcast_client: &mut SnapcastConnection,
-) {
+) -> bool {
 	let target_volume = volume.clamp(0.0, 100.0);
 	let id = match app_state.focus.as_ref() {
 		Some(id) => id,
-		None => return,
+		None => return false,
 	};
+
 	if let Some(group) = snapcast_state.groups.get(id) {
 		let group_clients: Vec<SnapcastClient> = snapcast_state
 			.clients
@@ -291,6 +292,10 @@ async fn set_volume(
 			.filter(|entry| group.clients.contains(entry.key()))
 			.map(|entry| entry.value().clone())
 			.collect();
+
+		if group_clients.len() == 0 {
+			return false;
+		}
 
 		// Find loudest client
 		let loudest_fractional = group_clients
@@ -342,6 +347,7 @@ async fn set_volume(
 					.await;
 			}
 		}
+		return true;
 	} else if let Some(client) = snapcast_state.clients.get(id) {
 		app_state.fractional_volumes.insert(client.id.clone(), target_volume);
 		let _ = snapcast_client
@@ -350,7 +356,10 @@ async fn set_volume(
 				ClientVolume { percent: target_volume.round() as usize, ..client.config.volume },
 			)
 			.await;
+		return true;
 	}
+
+	return false;
 }
 
 async fn set_volume_delta(
@@ -358,10 +367,10 @@ async fn set_volume_delta(
 	app_state: &mut AppState,
 	snapcast_state: &SnapcastState,
 	snapcast_client: &mut SnapcastConnection,
-) {
+) -> bool {
 	let id = match app_state.focus.as_ref() {
 		Some(id) => id,
-		None => return,
+		None => return false,
 	};
 
 	let current_volume = if let Some(group) = snapcast_state.groups.get(id) {
@@ -391,8 +400,10 @@ async fn set_volume_delta(
 
 	if let Some(current) = current_volume {
 		let target_volume = (current + delta).clamp(0.0, 100.0);
-		set_volume(target_volume, app_state, snapcast_state, snapcast_client).await;
+		return set_volume(target_volume, app_state, snapcast_state, snapcast_client).await;
 	}
+
+	return false;
 }
 
 #[tokio::main]
@@ -570,60 +581,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 								}
 							},
 							Action::ReduceVolume => {
-								let _ = set_volume_delta(-1.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-								sent = true;
+								sent = set_volume_delta(-1.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
 							},
 							Action::ReduceVolumeMore => {
-								let _ = set_volume_delta(-5.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-								sent = true;
+								sent = set_volume_delta(-5.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
 							},
 							Action::RaiseVolume => {
-								let _ = set_volume_delta(1.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-								sent = true;
+								sent = set_volume_delta(1.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
 							},
 							Action::RaiseVolumeMore => {
-								let _ = set_volume_delta(5.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-								sent = true;
+								sent = set_volume_delta(5.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
 							},
 							Action::SetVolumeTo10 => {
-								let _ = set_volume(10.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-								sent = true;
+								sent = set_volume(10.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
 							},
 							Action::SetVolumeTo20 => {
-								let _ = set_volume(20.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-								sent = true;
+								sent = set_volume(20.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
 							},
 							Action::SetVolumeTo30 => {
-								let _ = set_volume(30.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-								sent = true;
+								sent = set_volume(30.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
 							},
 							Action::SetVolumeTo40 => {
-								let _ = set_volume(40.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-								sent = true;
+								sent = set_volume(40.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
 							},
 							Action::SetVolumeTo50 => {
-								let _ = set_volume(50.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-								sent = true;
+								sent = set_volume(50.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
 							},
 							Action::SetVolumeTo60 => {
-								let _ = set_volume(60.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-								sent = true;
+								sent = set_volume(60.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
 							},
 							Action::SetVolumeTo70 => {
-								let _ = set_volume(70.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-								sent = true;
+								sent = set_volume(70.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
 							},
 							Action::SetVolumeTo80 => {
-								let _ = set_volume(80.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-								sent = true;
+								sent = set_volume(80.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
 							},
 							Action::SetVolumeTo90 => {
-								let _ = set_volume(90.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-								sent = true;
+								sent = set_volume(90.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
 							},
 							Action::SetVolumeTo100 => {
-								let _ = set_volume(100.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
-								sent = true;
+								sent = set_volume(100.0, &mut app_state, &snapcast_state, &mut snapcast_client).await;
 							},
 							Action::ToggleMute => {
 								if let Some(id) = app_state.focus.as_ref() {
