@@ -7,8 +7,10 @@ Usage
 -----
 
 ```
-snapmixer [--help] [--host|-h <HOSTNAME>] [--port|-h <PORT>] [--version|-v]
+snapmixer [--help|-h] [--version|-v] [--server|-s <HOSTNAME[:<PORT>]>]
 ```
+
+By default (if the `--server` option is not used) it will try `localhost:1705`.
 
 ### Keys
 

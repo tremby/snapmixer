@@ -87,20 +87,19 @@ fn get_binds_table() -> Table {
 	version,
 	about,
 	author,
-	disable_help_flag = true,
 	after_help = std::iter::once("Keys:".bold().underline().to_string())
 		.chain(get_binds_table().to_string().lines().map(|l| format!("  {}", l)))
 		.join("\n"),
 )]
 struct Args {
-	#[arg(short, long, default_value = "localhost", help = "Snapcast server hostname or IP")]
-	host: String,
-
-	#[arg(short, long, default_value_t = 1705, help = "Snapcast server port")]
-	port: u16,
-
-	#[arg(long, action = clap::ArgAction::Help, help = "Print help")]
-	help: Option<bool>,
+	#[arg(
+		short,
+		long,
+		value_name = "HOST[:PORT]",
+		default_value = "localhost:1705",
+		help = "Snapcast server"
+	)]
+	server: String,
 }
 
 struct AppState {
@@ -406,6 +405,16 @@ async fn set_volume_delta(
 	return false;
 }
 
+fn parse_server(s: &str) -> Result<(String, u16), String> {
+	match s.rsplit_once(":") {
+		Some((host, port)) if !port.is_empty() => {
+			let port = port.parse::<u16>().map_err(|_| format!("Invalid port number {}", port))?;
+			Ok((host.to_string(), port))
+		}
+		_ => Ok((s.to_string(), 1705)),
+	}
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	// Set up tracing
@@ -417,14 +426,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		.init();
 
 	let args = Args::parse();
+	let (host, port) = parse_server(&args.server)?;
+	let addr_str = format!("{}:{}", host, port);
 
-	let addr = format!("{}:{}", args.host, args.port);
-	tracing::debug!("Looking up {}", addr);
-	let socket_addr = tokio::net::lookup_host(&addr)
+	tracing::debug!("Looking up {}", addr_str);
+	let socket_addr = tokio::net::lookup_host(&addr_str)
 		.await
 		.map_err(|e| format!("DNS lookup failed: {}", e))?
 		.next()
-		.ok_or_else(|| format!("DNS lookup returned no addresses for {}", addr))?;
+		.ok_or_else(|| format!("DNS lookup returned no addresses for {}", &addr_str))?;
 
 	let (status_tx, mut status_rx) = tokio::sync::mpsc::unbounded_channel();
 
