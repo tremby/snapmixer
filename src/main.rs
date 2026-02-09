@@ -51,10 +51,10 @@ fn get_binds_table() -> Table {
 			keys: format!("{}/{}/{}/{}", "h".bold(), "j".bold(), "k".bold(), "l".bold()),
 			description: format!(
 				"same as {}/{}/{}/{}",
-				"h".bold(),
-				"j".bold(),
-				"k".bold(),
-				"l".bold()
+				"←".bold(),
+				"↓".bold(),
+				"↑".bold(),
+				"→".bold()
 			),
 		},
 		Bind {
