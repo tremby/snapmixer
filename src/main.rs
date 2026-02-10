@@ -3,8 +3,9 @@ use crossterm::{
 	event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
 	terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use futures::StreamExt;
+use futures::{pin_mut, stream::StreamExt};
 use itertools::Itertools;
+use mdns::RecordKind;
 use owo_colors::OwoColorize;
 use ratatui::{
 	Terminal,
@@ -20,7 +21,7 @@ use snapcast_control::{
 };
 use std::collections::HashMap;
 use std::pin::Pin;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use supports_unicode::Stream;
 use tabular::{Row, Table};
 use tokio::time::Sleep;
@@ -92,14 +93,8 @@ fn get_binds_table() -> Table {
 		.join("\n"),
 )]
 struct Args {
-	#[arg(
-		short,
-		long,
-		value_name = "HOST[:PORT]",
-		default_value = "localhost:1705",
-		help = "Snapcast server"
-	)]
-	server: String,
+	#[arg(short, long, value_name = "HOST[:PORT]", help = "Snapcast server")]
+	server: Option<String>,
 }
 
 struct AppState {
@@ -415,6 +410,120 @@ fn parse_server(s: &str) -> Result<(String, u16), String> {
 	}
 }
 
+async fn try_connect<F, Fut>(
+	host: &str,
+	port: u16,
+	connect_to: F,
+) -> Result<SnapcastConnection, String>
+where
+	F: Fn(std::net::SocketAddr) -> Fut + Copy,
+	Fut: std::future::Future<Output = Result<SnapcastConnection, std::io::Error>>,
+{
+	let addr_str = format!("{}:{}", host, port);
+	let mut addrs = match tokio::net::lookup_host(&addr_str).await {
+		Ok(addrs) => addrs,
+		Err(e) => {
+			return Err(format!("DNS lookup failed for {}: {}", addr_str, e));
+		}
+	};
+	let mut tried_count = 0;
+	while let Some(addr) = addrs.next() {
+		match connect_to(addr).await {
+			Ok(client) => return Ok(client),
+			Err(e) => {
+				tried_count = tried_count + 1;
+				tracing::debug!("Couldn't connect to Snapcast server at {:?}: {}", addr, e);
+			}
+		}
+	}
+	if tried_count == 0 {
+		return Err(format!("DNS lookup for {} gave no results", addr_str));
+	}
+	return Err(format!("Couldn't connect to Snapcast server at {}", addr_str));
+}
+
+async fn discover_snapcast_client<F, Fut>(connect_to: F) -> Result<SnapcastConnection, String>
+where
+	F: Fn(std::net::SocketAddr) -> Fut + Copy,
+	Fut: std::future::Future<Output = Result<SnapcastConnection, std::io::Error>>,
+{
+	let stream = mdns::discover::all("_snapcast._tcp.local", Duration::from_secs(1))
+		.map_err(|e| format!("mDNS discovery failed: {}", e))?
+		.listen();
+	pin_mut!(stream);
+
+	let discovery = async {
+		while let Some(Ok(response)) = stream.next().await {
+			let mut addr = None;
+			let mut port = None;
+			for record in response.records() {
+				match record.kind {
+					RecordKind::A(ip) => addr = Some(ip.into()),
+					RecordKind::AAAA(ip) => addr = Some(ip.into()),
+					RecordKind::SRV { port: p, .. } => port = Some(p),
+					_ => {}
+				}
+			}
+			if let (Some(addr), Some(port)) = (addr, port) {
+				tracing::info!(
+					"Discovered Snapcast server at {}:{}; that'll be the data, so attempting to connect to one port higher for control: {}:{}",
+					addr,
+					port,
+					addr,
+					port + 1
+				);
+				match connect_to(std::net::SocketAddr::new(addr, port + 1)).await {
+					Ok(client) => return Ok(client),
+					Err(e) => tracing::info!("Failed to connect to {}:{}: {}", addr, port + 1, e),
+				}
+			}
+		}
+		return Err(format!("Could not discover any Snapcast server"));
+	};
+
+	match tokio::time::timeout(tokio::time::Duration::from_secs(5), discovery).await {
+		Ok(res) => res,
+		Err(_) => {
+			Err("Autodiscovery timed out. Is avahi-daemon running? Is UDP port 5353 open?"
+				.to_string())
+		}
+	}
+}
+
+async fn get_snapcast_client<F, Fut>(
+	server: Option<String>,
+	connect_to: F,
+) -> Result<SnapcastConnection, String>
+where
+	F: Fn(std::net::SocketAddr) -> Fut + Copy,
+	Fut: std::future::Future<Output = Result<SnapcastConnection, std::io::Error>>,
+{
+	// First try specified server, and fail if that's no good
+	if let Some(server_str) = server {
+		tracing::trace!("try specified server");
+		let (host, port) = parse_server(&server_str)?;
+		return try_connect(&host, port, connect_to)
+			.await
+			.map_err(|e| format!("Failed to connect to {}: {}", server_str, e));
+	}
+
+	// Otherwise, try local machine with default port
+	tracing::info!("No server specified with --server; trying localhost");
+	match try_connect("localhost", 1705, connect_to).await {
+		Ok(client) => return Ok(client),
+		Err(e) => tracing::debug!("{}", e),
+	}
+
+	// Then try autodiscovery
+	tracing::info!("Couldn't connect to localhost; attempting autodiscovery...");
+	match discover_snapcast_client(connect_to).await {
+		Ok(client) => return Ok(client),
+		Err(e) => tracing::debug!("{}", e),
+	}
+
+	return Err(format!("Couldn't find a Snapcast server at localhost or via autodiscovery"));
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	// Set up tracing
@@ -426,29 +535,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		.init();
 
 	let args = Args::parse();
-	let (host, port) = parse_server(&args.server)?;
-	let addr_str = format!("{}:{}", host, port);
-
-	tracing::debug!("Looking up {}", addr_str);
-	let socket_addr = tokio::net::lookup_host(&addr_str)
-		.await
-		.map_err(|e| format!("DNS lookup failed: {}", e))?
-		.next()
-		.ok_or_else(|| format!("DNS lookup returned no addresses for {}", &addr_str))?;
 
 	let (status_tx, mut status_rx) = tokio::sync::mpsc::unbounded_channel();
 
-	tracing::debug!("Connecting to Snapcast server");
-	let mut snapcast_client = SnapcastConnection::builder()
-		.on_status_change({
-			let tx = status_tx.clone();
-			move |status| {
-				let _ = tx.send(status);
-			}
-		})
-		.connect(socket_addr)
+	let connect_to = |addr: std::net::SocketAddr| {
+		let tx = status_tx.clone();
+		async move {
+			SnapcastConnection::builder()
+				.on_status_change(move |status| {
+					let _ = tx.send(status);
+				})
+				.connect(addr)
+				.await
+		}
+	};
+
+	let mut snapcast_client = get_snapcast_client(args.server.clone(), connect_to)
 		.await
-		.map_err(|e| format!("Couldn't connect to Snapcast server: {}", e))?;
+		.map_err(|e| format!("Couldn't connect to a Snapcast server: {}", e))?;
 
 	// Set up terminal
 	tracing::debug!("Setting up terminal");

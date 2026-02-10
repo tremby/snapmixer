@@ -10,7 +10,8 @@ Usage
 snapmixer [--help|-h] [--version|-v] [--server|-s <HOSTNAME[:<PORT>]>]
 ```
 
-By default (if the `--server` option is not used) it will try `localhost:1705`.
+By default (if the `--server` option is not used) it will try `localhost:1705`,
+and if it can't connect there, it'll attempt to find a Snapcast server via mDNS autodiscovery.
 
 ### Keys
 
