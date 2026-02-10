@@ -561,6 +561,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let backend = CrosstermBackend::new(stdout);
 	let mut terminal = Terminal::new(backend)?;
 	enable_raw_mode()?;
+	terminal.clear()?;
 
 	let mut input = EventStream::new();
 
