@@ -648,6 +648,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 							needs_redraw = true;
 						}
 						Err(err) => {
+							tracing::error!("Received error from Snapcast server: {}", err);
 							app_state.error_messages.push(format!("{}", err));
 							needs_redraw = true;
 						}
