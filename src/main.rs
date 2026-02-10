@@ -23,14 +23,14 @@ use std::pin::Pin;
 use std::time::SystemTime;
 use supports_unicode::Stream;
 use tabular::{Row, Table};
-use tokio::time::{Duration, Sleep};
+use tokio::time::Sleep;
 use tracing;
 use tracing_subscriber::EnvFilter;
 
-const EXPECTED_RESPONSE_TIME: Duration = Duration::from_millis(200);
-const SUSPICIOUS_QUIET_TIME: Duration = Duration::from_mins(5);
-const SUSPEND_MONITOR_TIME: Duration = Duration::from_secs(1);
-const SUSPEND_THRESHOLD_TIME: Duration = Duration::from_secs(10);
+const EXPECTED_RESPONSE_TIME: tokio::time::Duration = tokio::time::Duration::from_millis(200);
+const SUSPICIOUS_QUIET_TIME: tokio::time::Duration = tokio::time::Duration::from_mins(5);
+const SUSPEND_MONITOR_TIME: tokio::time::Duration = tokio::time::Duration::from_secs(1);
+const SUSPEND_THRESHOLD_TIME: tokio::time::Duration = tokio::time::Duration::from_secs(10);
 
 fn get_binds_table() -> Table {
 	struct Bind {
