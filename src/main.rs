@@ -1084,7 +1084,11 @@ fn draw_ui(
 				} else {
 					Style::default().fg(Color::Reset)
 				};
-				let stream_label = format!(" [{}]", group.stream_id);
+				let stream_label = if snapcast_state.streams.len() > 1 {
+					format!(" [{}]", group.stream_id)
+				} else {
+					"".to_string()
+				};
 				let block_title = Line::from(vec![
 					get_volume_symbol(group.muted),
 					Span::raw(" "),
