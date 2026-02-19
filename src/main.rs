@@ -17,8 +17,7 @@ use ratatui::{
 };
 use snapcast_control::{
 	ConnectionStatus, SnapcastConnection, State as SnapcastState, StateGroup as SnapcastGroup,
-	client::Client as SnapcastClient, client::ClientVolume,
-	stream::Stream as SnapcastStream,
+	client::Client as SnapcastClient, client::ClientVolume, stream::Stream as SnapcastStream,
 };
 use std::collections::HashMap;
 use std::pin::Pin;
