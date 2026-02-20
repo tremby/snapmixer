@@ -2162,7 +2162,7 @@ dependencies = [
 
 [[package]]
 name = "snapmixer"
-version = "2.5.2"
+version = "2.6.0"
 dependencies = [
  "clap",
  "color-eyre",
