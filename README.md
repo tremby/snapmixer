@@ -57,6 +57,7 @@ Things I think would be neat, but which I have no motivation to implement:
 
 - Customizable colours? Patches welcome.
 - Customizable keybinds? Patches welcome.
+- Allow setting volumes greater than 100%, possibly unlockable via an option.
 
 [snapcast]: https://github.com/badaix/snapcast
 [logging-docs]: https://docs.rs/env_logger/latest/env_logger/#enabling-logging

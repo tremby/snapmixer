@@ -1134,7 +1134,8 @@ fn draw_ui(
 
 					// Volume gauge
 					let gauge = Gauge::default()
-						.ratio(client.config.volume.percent as f64 / 100.0)
+						.ratio((client.config.volume.percent as f64 / 100.0).clamp(0.0, 1.0))
+						.label(format!("{}%", client.config.volume.percent))
 						.gauge_style(Style::default().fg(
 							if app_state.focus.as_deref() == Some(&client.id) {
 								Color::Yellow
