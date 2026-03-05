@@ -52,6 +52,7 @@ Things I want to implement, but may take a while to get to (patches welcome):
 
 - Scrolling if there isn't enough screen space ([#13](https://github.com/tremby/snapmixer/issues/13)).
 - Scrolling on the error overlay ([#14](https://github.com/tremby/snapmixer/issues/14)).
+- Option to show volumes on a log scale rather than linear([#15](https://github.com/tremby/snapmixer/issues/15))
 
 Things I think would be neat, but which I have no motivation to implement:
 
